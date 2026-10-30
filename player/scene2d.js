@@ -67,7 +67,7 @@ const SIDE = {
     beam: '74,186 74,200 -130,292 -130,206',
   },
 };
-const SHAPE_FOR = { m3: 'model3', m3old: 'model3', my: 'modelY', myj: 'modelY', ms: 'modelS', mx: 'modelX', ct: 'cybertruck' };
+const SHAPE_FOR = { m3: 'model3', m3old: 'model3', m3h: 'model3', my: 'modelY', myj: 'modelY', ms: 'modelS', mx: 'modelX', ct: 'cybertruck' };
 
 const DEFS = `<defs>
   <linearGradient id="paint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5f656d"/><stop offset=".45" stop-color="#34393f"/><stop offset="1" stop-color="#1a1d21"/></linearGradient>

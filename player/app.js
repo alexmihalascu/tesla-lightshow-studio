@@ -104,9 +104,36 @@ for (const [id, k] of [['#setVehicle', 'vehicle'], ['#setRegion', 'region'], ['#
 }
 
 // ---------- Views ----------
+// One loaded car per vehicle, shared by the 3D view and the 2D views
+let carCache = null;
+async function getCar(key) {
+  if (!layout) {
+    const r = await fetch('/api/layout');
+    if (!r.ok) throw new Error((await r.json()).error);
+    layout = await r.json();
+  }
+  if (carCache?.key !== key) carCache = { key, p: import('./scene3d.js').then(m => m.loadCar(layout, key)) };
+  return carCache.p;
+}
 function mountViews() {
-  scene2d = createScene2D($('#view2d'), cfg.vehicle);
+  scene2d?.dispose?.();
+  $('#view2d').classList.remove('gl');
+  scene2d = createScene2D($('#view2d'), cfg.vehicle); // the drawing, until the real car is loaded
+  if (view !== '3d' && seq) mount2d();
   if (has3d() && seq) mount3d();
+}
+// 2D from the real 3D model (side, front, rear, flat), when that model really is this car
+let mount2dToken = 0;
+async function mount2d() {
+  const token = ++mount2dToken, key = cfg.vehicle;
+  try {
+    const [car, { createViews2D }] = await Promise.all([getCar(key), import('./scene3d.js')]);
+    if (token !== mount2dToken || key !== cfg.vehicle || !car.exact) return;
+    const box = $('#view2d');
+    box.innerHTML = '';
+    box.classList.add('gl');
+    scene2d = createViews2D(box, car);
+  } catch { /* keep the drawing */ }
 }
 async function mount3d() {
   scene3d?.dispose();
@@ -114,14 +141,9 @@ async function mount3d() {
   const box = $('#view3d');
   box.innerHTML = '<p class="view-msg">Loading the 3D model…</p>';
   try {
-    if (!layout) {
-      const r = await fetch('/api/layout');
-      if (!r.ok) throw new Error((await r.json()).error);
-      layout = await r.json();
-    }
     const { createScene3D } = await import('./scene3d.js');
     const key = cfg.vehicle;
-    const s = await createScene3D(box, layout, key);
+    const s = createScene3D(box, await getCar(key));
     if (key !== cfg.vehicle || !has3d()) { s.dispose(); return; }
     box.querySelector('.view-msg')?.remove();
     const note = document.createElement('p');
@@ -163,6 +185,7 @@ function setView(v) {
   $('#view2d').hidden = v === '3d';
   $('#view3d').hidden = v === '2d';
   if (has3d() && seq && !scene3d) mount3d();
+  if (v !== '3d' && seq && !$('#view2d').classList.contains('gl')) mount2d();
   if (!has3d() && scene3d) { scene3d.dispose(); scene3d = null; }
 }
 $$('.seg-btn[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
@@ -269,11 +292,16 @@ async function refresh() {
   if (text === lastLibrary) return; // nothing new (polled for the USB drive)
   lastLibrary = text;
   library = JSON.parse(text);
+  library.usb = library.drives.flatMap(d => d.shows);
   renderLibrary();
 }
+const showsOf = source => source === 'local' ? library.local : library.usb.filter(s => s.source === source);
+const driveName = d => `${d.drive}:${d.label ? ` ${d.label}` : ''}`;
 function renderLibrary() {
   const q = $('#search').value.trim().toLowerCase();
-  const onUsb = new Map(library.usb.map(s => [s.name, s.size]));
+  // "synced" = already on the drive shows get copied to
+  const onUsb = new Map(showsOf(library.target).map(s => [s.name, s.size]));
+  const target = library.drives.find(d => d.drive === library.target);
   const item = s => {
     const active = current && current.name === s.name && current.source === s.source;
     const playing = active && !audio.paused;
@@ -285,24 +313,34 @@ function renderLibrary() {
     </button></li>`;
   };
   const filt = list => list.filter(s => !q || s.name.toLowerCase().includes(q));
-  const local = filt(library.local), usb = filt(library.usb);
+  const local = filt(library.local);
   $('#local').innerHTML = local.map(item).join('') || `<p class="empty-note">${q ? 'Nothing found' : 'No shows yet'}</p>`;
   $('#localCount').textContent = library.local.length || '';
-  $('#usbTitle').textContent = library.usbDrive ? `On drive ${library.usbDrive}` : 'On USB drive';
-  $('#usbCount').textContent = library.usb.length || '';
-  $('#usb').innerHTML = library.usbDrive ? (usb.map(item).join('') || `<p class="empty-note">${q ? 'Nothing found' : 'No shows on the drive'}</p>`)
-    : '<p class="empty-note">No drive connected</p>';
+  // one group per USB drive; keep the collapsed state across refreshes
+  const closed = new Set($$('#drives .group-head[aria-expanded="false"]').map(h => h.dataset.drive));
+  $('#drives').innerHTML = library.drives.map(d => {
+    const shows = filt(d.shows), isTarget = d.drive === library.target;
+    // Tesla: the show drive must NOT have TeslaCam at its root, or shows won't be listed
+    const warn = isTarget && d.teslaCam;
+    return `<section class="group">
+      <button class="group-head" data-drive="${d.drive}" aria-expanded="${!closed.has(d.drive)}"><span>${esc(driveName(d))}</span><span class="count">${d.shows.length || ''}</span><svg class="chev" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></svg></button>
+      ${warn ? `<button class="notice" data-settings="usb"><svg viewBox="0 0 20 20"><path d="M10 3 18 17H2z"/><path d="M10 8v4M10 14.5v.5"/></svg><span>The drive has a TeslaCam folder. Tesla won't list your shows while it's there.</span></button>` : ''}
+      <ul class="items">${shows.map(item).join('') || `<p class="empty-note">${q && d.shows.length ? 'Nothing found'
+        : d.lightShow ? 'No shows on the drive' : isTarget ? 'Shows you copy go here' : 'No LightShow folder'}</p>`}</ul>
+    </section>`;
+  }).join('') || `<section class="group"><p class="empty-note">No USB drive connected</p></section>`;
   if (!current) renderGrid(onUsb);
-  $('#teslaCamNotice').hidden = !library.usbHasTeslaCam;
-  $('#teslaCamRow').hidden = !library.usbHasTeslaCam;
-  $('#usbInfo').textContent = library.usbDrive ? `${library.usbDrive}, ${library.usb.length} shows in LightShow` : 'No Tesla drive connected.';
+  $('#teslaCamRow').hidden = !target?.teslaCam;
+  $('#usbInfo').textContent = library.drives.length
+    ? `${target ? `Shows are copied to ${driveName(target)}.` : 'No drive to copy shows to.'} Connected: ${library.drives.map(driveName).join(', ')}.`
+    : 'No USB drive connected.';
   const showCopy = current?.source === 'local';
   $('#copyBtn').hidden = !showCopy;
   if (showCopy) {
     const s = library.local.find(x => x.name === current.name);
     const synced = s && onUsb.get(s.name) === s.size;
-    $('#copyBtn').disabled = synced || !library.usbDrive;
-    $('#copyBtn span').textContent = synced ? 'On drive' : 'Copy to drive';
+    $('#copyBtn').disabled = synced || !target;
+    $('#copyBtn span').textContent = synced ? `On drive ${target.drive}:` : target ? `Copy to ${target.drive}:` : 'Copy to drive';
   }
 }
 const ICON_USB = '<svg viewBox="0 0 20 20"><rect x="6" y="2.5" width="8" height="6" rx="1"/><rect x="4" y="8.5" width="12" height="9" rx="2"/></svg>';
@@ -310,7 +348,7 @@ const ICON_PC = '<svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="1
 function setCrumbs() {
   $('#crumbs').innerHTML = current
     ? `<button class="crumb-link" id="homeCrumb">Projects</button><span class="sep">/</span>
-       <span class="crumb-muted">${current.source === 'usb' ? `${ICON_USB}On drive ${esc(library.usbDrive || '')}` : `${ICON_PC}On computer`}</span>
+       <span class="crumb-muted">${current.source !== 'local' ? `${ICON_USB}On drive ${esc(current.source)}:` : `${ICON_PC}On computer`}</span>
        <span class="sep">/</span><strong>${esc(current.name)}</strong>`
     : '<strong>Projects</strong>';
   $('#homeCrumb')?.addEventListener('click', showEmpty);
@@ -324,7 +362,7 @@ function renderGrid(onUsb) {
     .filter(s => !q || s.name.toLowerCase().includes(q));
   $('#grid').innerHTML = list.map((s, i) => `
     <button class="card-p" data-source="${s.source}" data-name="${esc(s.name)}" data-i="${i}">
-      <span class="meta">${s.source === 'usb' ? `${ICON_USB}On drive` : `${ICON_PC}On computer${onUsb.get(s.name) === s.size ? ', also on drive' : ''}`}<span class="dur">${fmt(s.duration)}</span></span>
+      <span class="meta">${s.source !== 'local' ? `${ICON_USB}On drive ${s.source}:` : `${ICON_PC}On computer${onUsb.get(s.name) === s.size ? ', also on drive' : ''}`}<span class="dur">${fmt(s.duration)}</span></span>
       <span class="name">${esc(s.name)}</span>
       <canvas width="500" height="92" aria-hidden="true"></canvas>
       <span class="tags">${s.lights != null ? `<span>${s.lights} lights</span>` : '<span>compressed</span>'}${partsOf(s).map(p => `<span>${p}</span>`).join('')}</span>
@@ -401,7 +439,7 @@ function drawMini(g, o, W, H, t) {
 }
 async function startPreview(card) {
   stopPreview();
-  const s = library[card.dataset.source]?.find(x => x.name === card.dataset.name);
+  const s = showsOf(card.dataset.source).find(x => x.name === card.dataset.name);
   if (!s || s.compressed) return;
   const key = `${s.source}/${s.name}/${s.size}`;
   const token = {};
@@ -434,7 +472,7 @@ function stopPreview() {
   if (!preview) return;
   const card = preview.card;
   preview = null;
-  drawActivity(card.querySelector('canvas'), library[card.dataset.source]?.find(x => x.name === card.dataset.name));
+  drawActivity(card.querySelector('canvas'), showsOf(card.dataset.source).find(x => x.name === card.dataset.name));
 }
 $('#grid').addEventListener('pointerover', e => {
   const c = e.target.closest('.card-p');
@@ -448,12 +486,13 @@ $$('[data-filter]').forEach(b => b.addEventListener('click', () => {
   renderLibrary();
 }));
 $('#search').addEventListener('input', renderLibrary);
-$$('.group-head').forEach(h => h.addEventListener('click', () => h.setAttribute('aria-expanded', String(h.getAttribute('aria-expanded') !== 'true'))));
 $('.groups').addEventListener('click', e => {
+  const h = e.target.closest('.group-head'); // delegated: drive groups are re-rendered
+  if (h) h.setAttribute('aria-expanded', String(h.getAttribute('aria-expanded') !== 'true'));
+  if (e.target.closest('[data-settings]')) openSettings('usb');
   const it = e.target.closest('.item');
   if (it) openShow(it.dataset.source, it.dataset.name);
 });
-$('#teslaCamNotice').addEventListener('click', () => openSettings('usb'));
 audio.addEventListener('play', renderLibrary);
 audio.addEventListener('pause', renderLibrary);
 
@@ -465,7 +504,7 @@ function parseFseq(buf) {
 }
 
 async function openShow(source, name, autoplay = true) {
-  const s = library[source].find(x => x.name === name);
+  const s = showsOf(source).find(x => x.name === name);
   if (!s) return;
   stopPreview();
   audio.pause();
@@ -576,7 +615,7 @@ $('#newForm').addEventListener('submit', async e => {
     const r = await fetch('/api/generate', {
       method: 'POST', body: picked,
       headers: { 'X-Name': encodeURIComponent(name), 'X-Filename': encodeURIComponent(picked.name),
-        'X-Max': cfg.elements === 'max' ? '1' : '0', 'X-Model': { m3old: 'm3', myj: 'my' }[cfg.vehicle] || cfg.vehicle },
+        'X-Max': cfg.elements === 'max' ? '1' : '0', 'X-Model': { m3old: 'm3', m3h: 'my', myj: 'my' }[cfg.vehicle] || cfg.vehicle },
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error);

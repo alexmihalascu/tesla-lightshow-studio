@@ -3,7 +3,8 @@
 // "Closures channels" and "Light channel mapping details".
 
 export const VEHICLES = {
-  m3: { name: 'Model 3', hint: '2021 and newer', family: '3y' },
+  m3: { name: 'Model 3', hint: '2021–2023, manual trunk', family: '3y' },
+  m3h: { name: 'Model 3 Highland', hint: '2024 and newer, power trunk', family: '3y', liftgate: true },
   m3old: { name: 'Model 3 (before Oct 2020)', hint: 'Tail lights and license plate light work together', family: '3y', tailsPlate: true },
   my: { name: 'Model Y', hint: '2020–2024, with power liftgate', family: '3y', liftgate: true },
   myj: { name: 'Model Y Juniper', hint: '2025 and newer, front and rear light bars', family: '3y', liftgate: true },
@@ -42,8 +43,13 @@ export const CLOSURES = [
 
 export const LAMP_COLOR = { white: '#f4f8ff', amber: '#ffa628', red: '#ff2b2b' };
 
-const RAMP_MS = [0, 500, 1000, 2000];
-const rampState = v => Math.min((Math.floor((v > 127 ? 255 - v : v) / 13) + 1) >> 1, 3);
+// Ramp duration from the effect brightness (README "Ramping light channels"):
+// off 10/20/30% = 500/1000/2000 ms, on 70/80/90% = 500/1000/2000 ms, 0% and 100% instant
+const rampMs = v => {
+  const p = Math.round(v * 100 / 255);
+  if (v > 127) return p >= 95 ? 0 : p >= 85 ? 2000 : p >= 75 ? 1000 : p >= 65 ? 500 : 0;
+  return p <= 5 ? 0 : p <= 15 ? 500 : p <= 25 ? 1000 : p <= 35 ? 2000 : 0;
+};
 export const closureState = v => (Math.floor(v / 32) + 1) >> 1; // 0 idle, 1 open, 2 dance, 3 close, 4 stop
 
 function rampable(ch, v, cfg) {
@@ -102,7 +108,7 @@ export function createEmulator(cfg) {
       const target = val > 127 ? 1 : 0;
       // Channels 5 and 6 use channel 4's ramp duration (the "leader" channel)
       const rampSource = ch >= 8 && ch <= 11 ? frame[6 + (ch % 2)] : val;
-      const dur = rampable(ch, v, cfg) ? RAMP_MS[rampState(rampSource)] : 0;
+      const dur = rampable(ch, v, cfg) ? rampMs(rampSource) : 0;
       if (snap || dur === 0) lv[ch] = target;
       else lv[ch] += Math.sign(target - lv[ch]) * Math.min(Math.abs(target - lv[ch]), dt / dur);
     }

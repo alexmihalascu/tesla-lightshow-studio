@@ -162,9 +162,21 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None,
         near = np.where(events - grid[idx - 1] < grid[idx] - events, grid[idx - 1], grid[idx])
         return np.where(np.abs(near - events) <= 2, near, events)
 
-    kicks = snap(pick_peaks(low, min_gap=11, k=1.2))   # >= 220 ms between flashes
-    snares = snap(pick_peaks(mid, min_gap=11, k=1.4))
-    hats = snap(pick_peaks(high, min_gap=11, k=1.5))
+    hits = pick_peaks(onset, min_gap=5, k=0.5)  # anything audible: grid patterns land on these
+
+    def on_hit(t, tol=2):
+        """Nearest audible hit within `tol` frames of t, or None."""
+        i = int(np.searchsorted(hits, t))
+        near = [h for h in hits[max(0, i - 1):i + 1] if abs(h - t) <= tol]
+        return int(min(near, key=lambda h: abs(h - t))) if near else None
+
+    # band peaks can sit a few frames off the audible attack: move them onto it
+    attack = lambda ev: np.array([on_hit(t, 3) or t for t in ev], int)
+    kicks = snap(attack(pick_peaks(low, min_gap=11, k=1.2)))   # >= 220 ms between flashes
+    snares = snap(attack(pick_peaks(mid, min_gap=11, k=1.4)))
+    hats = snap(attack(pick_peaks(high, min_gap=11, k=1.5)))
+    # one hit = one instrument: a "snare" on top of a kick is the same full hit, the kick keeps it
+    snares = np.array([t for t in snares if not len(kicks) or np.abs(kicks - t).min() > 2], int)
     flash = 6  # 120 ms (Tesla recommends >= 100 ms)
     # 4/4 bars: the downbeat is the beat phase with the most bass
     phase = int(np.argmax([low[beats[p::4]].sum() for p in range(4)]))
@@ -185,101 +197,129 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None,
         if a < b:
             data[a:b, chs] = np.maximum(data[a:b, chs], v)
 
-    def pulse(chs, t, decay=RAMP_OFF_500, tail=28):
-        put(chs, t, t + flash, ON)
-        put(chs, t + flash, t + flash + tail, decay)
-
+    # Choreography rules, from comparing against hand-made shows (see evaluate.py):
+    # - each instrument owns one lamp group, so layers don't pile onto the same lamps
+    # - lamps hold until the next note of the same instrument (~0.4 s), not 120 ms blips
+    # - left/right mirror each other; the car reads as one gesture
+    # - big moves (many lamps at once) only on strong accents, so a big move always has a big sound
     end = n - 3 * FPS
-    # Intro: tail lights + signature fade in; outro: everything fades out over 2 s
-    put([L_TAIL, R_TAIL], 0, end, ON)
+    gap = 5  # 100 ms dark between two notes, so a repeated note is visible as a new flash
+    accent = onset[hits] if len(hits) else np.zeros(1)
+    strong_thr = np.percentile(accent, 70)
+    strong = lambda t: onset[max(0, t - 2):t + 3].max() >= strong_thr
+
+    def held(times, longest, every=None):
+        """(start, stop) per note: holds until the next note of the same instrument, at most `longest`.
+        The lamp goes off on the last audible hit before that, so turning off is a move on the music too.
+        `every`: at most one note per that many frames, keeping the loudest (hand-made shows flash each
+        lamp ~0.5x per second; every kick or snare on the same lamp reads as flicker)."""
+        times = sorted({int(t) for t in times if t < end})
+        if every:
+            kept = []
+            for t in sorted(times, key=lambda t: -onset[t]):
+                if all(abs(t - k) >= every for k in kept):
+                    kept.append(t)
+            times = sorted(kept)
+        out = []
+        for t, u in zip(times, times[1:] + [end]):
+            stop = min(t + int(longest), u - gap)
+            i = int(np.searchsorted(hits, stop, "right")) - 1
+            out.append((t, int(hits[i]) if i >= 0 and hits[i] >= t + flash else max(t + flash, stop)))
+        return out
+
+    # Intro: signature fades in; outro: everything fades out over 2 s
     put([L_TAIL, R_TAIL, L_SIG, R_SIG], 0, 2 * FPS + 3, RAMP_ON_2S)
     put([L_TAIL, R_TAIL, L_SIG, R_SIG, L_INNER, R_INNER], end, n - 5, RAMP_OFF_2S)
 
     q = period / 4  # one 16th note
-    half = max(flash, int(period * 0.4))
+    beat_hold = period * 0.75
+    two_beats = 2 * period - 2  # one note per lamp group per half bar, at most
     POS = [L_AUX, R_AUX, L_MARK, R_MARK]  # one output on Model 3/Y: gaps matter
-    CHASE = [L_FTURN, L_FOG, L_SIG, L_INNER, L_OUTER, R_OUTER, R_INNER, R_SIG, R_FOG, R_FTURN]
+    # build-up chase, outside in, both sides at once
+    CHASE = [[L_FTURN, R_FTURN], [L_FOG, R_FOG], [L_SIG, R_SIG], [L_OUTER, R_OUTER], [L_INNER, R_INNER]]
+    HEAD = [L_OUTER, R_OUTER, L_INNER, R_INNER]
+    sig_free = []  # beats where no vocal holds the signature: it pulses there instead
     for bi, (a, b) in enumerate(zip(bars, bar_end)):
         if a >= end:
             break
         b = min(int(b), end)
         L = bar_lvl[bi]
-        bar_beats = beats[(beats >= a) & (beats < b)]
+        played = [h for h in (on_hit(int(t)) for t in beats[(beats >= a) & (beats < b)]) if h is not None]
         if build_bar[bi]:
-            # Build-up: light chases left-right, first on 8ths, then on 16ths
+            # Build-up: light runs from the corners to the middle, on 8ths then on 16ths
             step = period / 2 if build_bar[bi] == 1 else q
             for k, t in enumerate(np.arange(a, b, step)):
-                ch = CHASE[k % len(CHASE)] if (k // len(CHASE)) % 2 == 0 else CHASE[::-1][k % len(CHASE)]
-                put([ch], int(t), int(t) + flash, ON)
+                t = on_hit(int(t)) or int(t)
+                put(CHASE[k % len(CHASE)], t, t + max(flash, int(step) - 1), ON)
                 if build_bar[bi] == 2 and k % 2 == 0:
-                    put([BRAKE], int(t), int(t) + flash, ON)
+                    put([BRAKE], t, t + flash, ON)
             continue
         if L == 0:
-            # Quiet: headlights "breathe" once every 4 bars (not every bar, or they never go dark),
-            # park lights mark the downbeat, signature pulses on the beat
+            # Quiet: headlights "breathe" once every 4 bars, park lights mark a played downbeat
             if bi % 4 == 0:
                 mid_bar = a + (b - a) // 2
                 put([L_INNER, R_INNER], a, mid_bar, RAMP_ON_2S)
                 put([L_INNER, R_INNER], mid_bar, b, RAMP_OFF_2S)
-            put(POS, a, a + 2 * flash, ON)  # quiet: park lights only mark the downbeat
-            for t in bar_beats:
-                pulse([L_SIG, R_SIG, *CH4], int(t))
+            if played and played[0] - a <= 2:
+                put(POS, a, a + int(beat_hold), ON)
+            sig_free += [t for t in played if strong(t)]
             continue
-        for i, t in enumerate(bar_beats):
-            t = int(t)
-            pulse([L_SIG, R_SIG, *CH4], t)
+        if L == 2:
+            put([L_TAIL, R_TAIL], a, b, ON)  # chorus: tail lights steady, brake does the kicks
+        for i, (t, u) in enumerate(held(played, period * 0.6)):
             if L == 1:
-                # Verse: main beams alternate left/right, with the rear turn signal on the same side
-                put([L_OUTER, L_RTURN] if i % 2 == 0 else [R_OUTER, R_RTURN], t, t + half, ON)
-                continue
-            # Chorus: "matrix" sweep across the headlights, outer -> inner -> inner -> outer,
-            # reversing direction every bar
-            sweep = [L_OUTER, L_INNER, R_INNER, R_OUTER]
-            for s, ch in enumerate(sweep if bi % 2 == 0 else sweep[::-1]):
-                put([ch], int(t + s * q), int(t + s * q) + max(flash, int(q)), ON)
-            off = int(t + period / 2)  # off-beat: park lights
-            put(POS, off, off + flash, ON)
-            if i % 2 == 1:  # beats 2 and 4: front + rear fog
-                put([L_FOG, R_FOG, REAR_FOG], t, t + half, ON)
-        if L == 2 and bi % 4 == 0:  # every 4 chorus bars: hit everything
-            put([L_OUTER, R_OUTER, L_INNER, R_INNER, *POS, L_REP, R_REP, BRAKE, REVERSE, PLATE], a, a + 2 * flash, ON)
-            pulse([L_FTURN, R_FTURN], a, RAMP_OFF_2S, 2 * FPS + 3)
+                # Verse: outer pair on beats 1 and 3, inner pair on 2 and 4
+                put(HEAD[:2] if i % 2 == 0 else HEAD[2:], t, u, ON)
+            elif i % 2 == 0:
+                # Chorus, beats 1 and 3: opens from the middle, inner pair on the beat, outer pair on the
+                # next hit, held through beat 2/4 (strong snares flash every headlight there)
+                u = held([t, t + 2 * period], period * 1.6)[0][1]
+                put(HEAD[2:], t, u, ON)
+                o = on_hit(int(t + period / 2))
+                if o is not None and o > t + flash:
+                    put(HEAD[:2], o, max(o + flash, u), ON)
+        sig_free += [t for t in played if strong(t)]
+        if L == 2 and bi % 4 == 0 and played and played[0] - a <= 2 and strong(played[0]):
+            # every 4 chorus bars, on a strong downbeat: everything at once
+            put([*HEAD, *POS, L_REP, R_REP, L_FOG, R_FOG, BRAKE, REVERSE, PLATE], a, a + int(beat_hold), ON)
 
-    # Instrumental parts (no voice): the lead instrument plays the fog lights and turn signals, left/right
-    if voice is not None:
-        for j, t in enumerate(pick_peaks(other_on, min_gap=9, k=1.0)):
-            if t < end and lvl_at(t) >= 1 and not voice[t]:
-                put([L_FOG, L_FTURN] if j % 2 == 0 else [R_FOG, R_FTURN], t, t + flash, ON)
-        # Bass notes: park lights / side markers (one output on Model 3/Y, so short flashes with gaps)
-        for t in pick_peaks(bass_on, min_gap=12, k=1.2):
-            if t < end and lvl_at(t) >= 1:
-                put(POS, t, t + flash, ON)
-
-    # Vocal phrases: signature + channels 4-6 stay lit while someone sings (>= 0.5 s), then fade
+    # Vocals own the signature + channels 4-6: lit while someone sings (>= 0.5 s), then fade.
+    # Without vocals there, they pulse on the strong beats instead.
+    sing = np.zeros(n, bool)
     if vocal is not None:
         sing = voice if voice is not None else vocal > np.percentile(vocal, 65)
         for a, b in segments(sing):
             if b - a >= FPS // 2 and a < end and lvl_at(a) >= 1:
                 put([L_SIG, R_SIG, *CH4], a, min(b, end), ON)
                 put([L_SIG, R_SIG, *CH4], min(b, end), min(b, end) + 28, RAMP_OFF_500)
+    for t, u in held([t for t in sig_free if not sing[t]], beat_hold, two_beats):
+        put([L_SIG, R_SIG, *CH4], t, u, ON)
 
-    for t in kicks:
-        if t < end and lvl_at(t) >= 1:
-            put([BRAKE], t, t + flash, ON)
-            if lvl_at(t) == 1:
-                put([L_INNER, R_INNER], t, t + flash, ON)  # no fade tail: kicks ~500 ms apart would keep them lit
-            else:
-                put([REAR_FOG], t, t + flash, ON)
-    for t in snares:
-        if t < end and lvl_at(t) >= 1:
-            # snare: fog lights + repeaters in verses, flash every headlight in choruses
-            put([L_FOG, R_FOG, L_REP, R_REP] if lvl_at(t) == 1 else [L_FOG, R_FOG, L_OUTER, R_OUTER, L_INNER, R_INNER], t, t + flash, ON)
-    for j, t in enumerate(hats):
-        if t < end and lvl_at(t) == 2:
-            pulse([L_FTURN, L_REP] if j % 2 == 0 else [R_FTURN, R_REP], t)
+    # Kick: brake lights (tail lights are steady in choruses only)
+    for t, u in held([t for t in kicks if lvl_at(t) >= 1], beat_hold, two_beats):
+        put([BRAKE], t, u, ON)
+    # Snare: front + rear fog; a strong chorus snare also flashes every headlight
+    for t, u in held([t for t in snares if lvl_at(t) >= 1], beat_hold, two_beats):
+        put([L_FOG, R_FOG, REAR_FOG], t, u, ON)
+        if lvl_at(t) == 2 and strong(t):
+            put(HEAD, t, t + 2 * flash, ON)
+    # Hi-hats (choruses only): front turn signals + repeaters, short, only on the off-beat "and"
+    # (every 16th reads as flicker)
+    off_beat = lambda t: (i := int(np.searchsorted(beats, t, "right")) - 1) >= 0 and abs(t - beats[i] - period / 2) <= 2
+    for t, _u in held([t for t in hats if lvl_at(t) == 2 and off_beat(t)], flash, two_beats):
+        put([L_FTURN, R_FTURN, L_REP, R_REP], t, t + flash, ON)
+
+    if voice is not None:
+        # Instrumental parts (no voice): the lead instrument plays the turn signals + repeaters
+        lead = [t for t in pick_peaks(other_on, min_gap=9, k=1.0) if lvl_at(t) >= 1 and not voice[t]]
+        for t, u in held(lead, beat_hold, two_beats):
+            put([L_FTURN, R_FTURN, L_REP, R_REP], t, u, ON)
+        # Bass notes: park lights / side markers (one output on Model 3/Y, so the gaps matter)
+        for t, u in held([t for t in pick_peaks(bass_on, min_gap=12, k=1.2) if lvl_at(t) >= 1], beat_hold, two_beats):
+            put(POS, t, u, ON)
 
     # Silence (breaks, pauses, fade-outs >= 1 s): every light goes dark, even though the beat grid keeps going
-    calm = np.convolve(energy, np.ones(FPS // 2) / (FPS // 2), "same") < 0.08 * np.percentile(energy, 90)
+    calm = np.convolve(energy, np.ones(FPS // 2) / (FPS // 2), "same") < 0.03 * np.percentile(energy, 90)  # -30 dB
     for a, b in segments(calm):
         if b - a >= FPS and a < end:
             data[a:min(b, end), :30] = OFF

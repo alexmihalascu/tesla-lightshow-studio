@@ -2,15 +2,27 @@
 
 A local studio for Tesla Light Shows: turn a song into a show, preview it on your car (2D and 3D), and copy it to your USB drive.
 
-![Player: 2D front/rear views, 3D view and channel timeline](docs/screenshots/player.png)
+![Player: 2D views of the real car next to the 3D view, with the channel timeline](docs/screenshots/player.png)
 
-![Projects page](docs/screenshots/projects.png)
-
-- **Generator**: analyzes the song (tempo, beats, bars, kick/snare/hi-hat, sections) and writes an uncompressed `.fseq` v2 that respects Tesla's official limits. Quiet parts "breathe", verses pulse, build-ups chase left to right, choruses sweep the headlights like a matrix.
-- **Per-model emulator**: Model 3, Model 3 (before Oct 2020), Model Y, Model Y Juniper, Model S, Model X and Cybertruck, plus region (Europe or North America) and headlight type. It applies the rules from Tesla's docs: combined channels 4–6 on 3/Y, combined park lights, Cybertruck remapping, which closures each model has.
-- **Player**: 2D (side, front, rear), 3D, or both side by side, with camera angles, a channel timeline and a sync offset for Bluetooth/speaker latency.
-- **Projects**: shows on your computer and on the drive, with an activity fingerprint and a live hover preview on every card. Presentation mode plays them back to back, full screen.
+- **Generator**: analyzes the song (tempo, beats, bars, kick/snare/hi-hat, sections) and writes an uncompressed `.fseq` v2 that respects Tesla's official limits. Each instrument owns one group of lamps (kick: brake, snare: fog, hi-hat: turn signals, vocals: signature, bass: park lights), lamps hold for the note instead of blinking, left and right mirror each other, and big moves only land on strong hits. The car goes dark when the song does.
+- **Per-model emulator**: Model 3, Model 3 Highland (power trunk), Model 3 (before Oct 2020), Model Y, Model Y Juniper, Model S, Model X and Cybertruck, plus region (Europe or North America) and headlight type. It applies the rules from Tesla's docs: combined channels 4–6 on 3/Y, combined park lights, Cybertruck remapping, which closures each model has, ramp durations (on/off over 0.5, 1 or 2 s).
+- **Player**: 2D, 3D, or both side by side, with camera angles, a channel timeline and a sync offset for Bluetooth/speaker latency. The 2D view is the 3D model seen flat from the side, front and rear, so lamps, mirrors and the liftgate sit where they are on the real car (a drawing is used while it loads, or when there's no 3D model of that car).
+- **Projects**: shows on your computer and on every USB drive plugged in (copying goes to the one with a `LightShow` folder), with an activity fingerprint and a live hover preview on every card. Presentation mode plays them back to back, full screen.
 - **Docs**: channel map, ramps, closures and per-model details at `/docs.html`.
+
+| | |
+|---|---|
+| ![2D view](docs/screenshots/player-2d.png) | ![3D view](docs/screenshots/player-3d.png) |
+| ![Projects](docs/screenshots/projects.png) | ![Docs](docs/screenshots/docs.png) |
+| ![Settings: car](docs/screenshots/settings-car.png) | ![Settings: USB drives](docs/screenshots/settings-usb.png) |
+
+<details><summary>Every vehicle in the 2D view: lights, then liftgate open and mirrors folded</summary>
+
+![All vehicles](docs/screenshots/vehicles.png)
+
+</details>
+
+Screenshots render these 3D models (not included in the repo): [Tesla 2018 Model 3](https://sketchfab.com/3d-models/tesla-2018-model-3-5ef9b845aaf44203b6d04e2c677e444f) by Ameer Studio (CC BY 4.0), [Tesla Model Y](https://sketchfab.com/3d-models/tesla-model-y-df871e1660044645ac6c170ab2059f2c) by Nieve5677 (CC BY 4.0), [2025 Tesla Model Y](https://sketchfab.com/3d-models/2025-tesla-model-y-619601e7800d418da5922c4fa7833f74) by BloxBloger (CC BY-NC 4.0), [Tesla Model X 2020](https://sketchfab.com/3d-models/tesla-model-x-2020-c61839793eab4f31a26e261a2de750b5) by ItsDiyor (CC BY 4.0), and the Model S and Cybertruck from Tesla's [light-show](https://github.com/teslamotors/light-show) xLights project.
 
 ## Running
 
@@ -18,7 +30,7 @@ Requires Python 3.10+ and [ffmpeg](https://ffmpeg.org/) on your PATH.
 
 ```sh
 pip install -r requirements.txt
-python studio.py
+python studio.py        # or: npm run dev
 ```
 
 Opens `http://127.0.0.1:8642`. The server only listens locally.
@@ -53,6 +65,14 @@ Put `.glb` files (for example from Sketchfab, under a Creative Commons license) 
 | `models/modelx.glb` | Model X |
 
 Studio orients and scales the model automatically, finds the lamps by material name (or splits them into front/rear and left/right), cuts out the mirrors and folds them, and shows markers for parts the model doesn't have separately (windows, liftgate). The author and license stored in the file are shown in the 3D view, as CC-BY requires.
+
+## Scoring a show
+
+```sh
+python generator/evaluate.py show.fseq song.mp3
+```
+
+Scores 0–100 for how it looks, calibrated on hand-made shows: how many visible moves land on a sound you hear, whether the strong hits get answered, how busy it is (big moves per second, flashes per lamp), how long lamps hold, left/right symmetry and contrast.
 
 ## Command-line generator
 

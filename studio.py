@@ -21,16 +21,39 @@ CLOSURES = {"mirrors": (34, 20), "windows": (36, 6), "liftgate": (40, 6), "charg
 _stats_cache = {}
 
 
-def usb_dir():
-    """The Tesla drive = first drive (D:..Z:) with a LightShow/ or TeslaCam/ folder."""
+def usb_drives():
+    """Every removable drive (USB sticks; internal disks are skipped even with a TeslaCam backup on them).
+    [{"drive": "F", "label": "LIGHTSHOW", "lightShow": bool, "teslaCam": bool}]"""
+    if os.name != "nt":
+        return []
+    import ctypes
+    k32, out = ctypes.windll.kernel32, []
     for letter in string.ascii_uppercase[3:]:
-        root = Path(f"{letter}:/")
-        try:
-            if (root / "LightShow").is_dir() or (root / "TeslaCam").is_dir():
-                return root / "LightShow"
-        except OSError:
+        root = f"{letter}:\\"
+        if k32.GetDriveTypeW(root) != 2:  # DRIVE_REMOVABLE
             continue
+        label = ctypes.create_unicode_buffer(261)
+        if not k32.GetVolumeInformationW(root, label, 261, None, None, None, None, 0):
+            continue  # card reader slot without a card
+        p = Path(root)
+        out.append({"drive": letter, "label": label.value, "lightShow": (p / "LightShow").is_dir(),
+                    "teslaCam": (p / "TeslaCam").is_dir()})
+    return out
+
+
+def target_drive(drives):
+    """Where shows get copied: a drive that already has LightShow/, else one labelled LIGHTSHOW,
+    else any drive without TeslaCam/ (Tesla won't list shows on a drive that has it)."""
+    for ok in (lambda d: d["lightShow"] and not d["teslaCam"], lambda d: d["lightShow"],
+               lambda d: d["label"].upper() == "LIGHTSHOW", lambda d: not d["teslaCam"]):
+        found = next((d["drive"] for d in drives if ok(d)), None)
+        if found:
+            return found
     return None
+
+
+def usb_dir(letter):
+    return Path(f"{letter}:/LightShow")
 
 
 def tesla_dir():
@@ -151,16 +174,18 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def folder(self, source):
-        return SHOWS if source == "local" else usb_dir() if source == "usb" else None
+        if source == "local":
+            return SHOWS
+        return usb_dir(source) if any(d["drive"] == source for d in usb_drives()) else None
 
     def do_GET(self):
         path = unquote(urlparse(self.path).path)
         if path == "/api/shows":
-            usb = usb_dir()
-            return self.send_json({"local": list_shows(SHOWS, "local"), "usb": list_shows(usb, "usb"),
-                                   "usbDrive": str(usb.parent)[:2] if usb else None,
-                                   # Tesla: the drive must NOT have TeslaCam at its root, or shows won't be listed
-                                   "usbHasTeslaCam": bool(usb and (usb.parent / "TeslaCam").is_dir())})
+            drives = usb_drives()
+            for d in drives:
+                d["shows"] = list_shows(usb_dir(d["drive"]), d["drive"])
+            return self.send_json({"local": list_shows(SHOWS, "local"), "drives": drives,
+                                   "target": target_drive(drives)})
         if path == "/api/layout":
             layout = tesla_layout()
             return self.send_json(layout or {"error": "Can't find the Tesla xLights project (tesla_xlights_show_folder)."},
@@ -194,7 +219,7 @@ class Handler(SimpleHTTPRequestHandler):
             with open(target, "rb") as f:
                 shutil.copyfileobj(f, self.wfile)
             return
-        m = re.fullmatch(r"/files/(local|usb)/([^/]+)", path)
+        m = re.fullmatch(r"/files/(local|[D-Z])/([^/]+)", path)
         if m:
             folder, fname = self.folder(m[1]), m[2]
             target = folder / fname if folder else None
@@ -241,9 +266,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"name": name, "bpm": round(bpm), "beats": nbeats})
         if path == "/api/copy-to-usb":
             name = json.loads(self.rfile.read(length) or b"{}").get("name", "")
-            usb = usb_dir()
-            if not usb:
+            letter = target_drive(usb_drives())
+            if not letter:
                 return self.send_json({"error": "Can't find the Tesla drive. Plug it in and try again."}, 404)
+            usb = usb_dir(letter)
             fseq, audio = show_files(SHOWS, name)
             if not NAME_RE.match(name) or not fseq.exists() or not audio:
                 return self.send_json({"error": "That show isn't in the library."}, 404)

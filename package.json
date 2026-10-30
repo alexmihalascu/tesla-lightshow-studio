@@ -1,0 +1,8 @@
+{
+  "name": "tesla-lightshow-studio",
+  "private": true,
+  "scripts": {
+    "dev": "python studio.py",
+    "test": "python test_studio.py"
+  }
+}
