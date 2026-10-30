@@ -53,7 +53,9 @@ def analyze(y):
     mid = flux((freqs > 1000) & (freqs < 4000))   # snare, clap
     high = flux((freqs > 2000) & (freqs < 8000))  # cinele
     energy = np.sqrt((frames ** 2).mean(axis=1))
-    return onset, low, mid, high, energy
+    # vocal/melody band level (not flux): sustained while someone sings or a lead plays
+    vocal = np.convolve(mag[:, (freqs > 300) & (freqs < 3000)].mean(axis=1), np.ones(15) / 15, "same")
+    return onset, low, mid, high, energy, vocal
 
 
 def tempo_period(onset):
@@ -111,7 +113,7 @@ def segments(mask):
     return list(zip(edges[::2], edges[1::2]))
 
 
-def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
+def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None):
     n = len(onset)
     data = np.zeros((n, NCH), np.uint8)
     lvl = levels(energy, (25, 55) if max_mode else (35, 70))
@@ -186,7 +188,7 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
             mid_bar = a + (b - a) // 2
             put([L_INNER, R_INNER], a, mid_bar, RAMP_ON_2S)
             put([L_INNER, R_INNER], mid_bar, b, RAMP_OFF_2S)
-            put(POS, a, b, ON)
+            put(POS, a, a + 2 * flash, ON)  # quiet: park lights only mark the downbeat
             for t in bar_beats:
                 pulse([L_SIG, R_SIG, *CH4], int(t))
             continue
@@ -209,6 +211,14 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
         if L == 2 and bi % 4 == 0:  # every 4 chorus bars: hit everything
             put([L_OUTER, R_OUTER, L_INNER, R_INNER, *POS, L_REP, R_REP, BRAKE, REVERSE, PLATE], a, a + 2 * flash, ON)
             pulse([L_FTURN, R_FTURN], a, RAMP_OFF_2S, 2 * FPS + 3)
+
+    # Vocal phrases: signature + channels 4-6 stay lit while the melody/vocal is strong (>= 0.5 s), then fade
+    if vocal is not None:
+        sing = vocal > np.percentile(vocal, 65)
+        for a, b in segments(sing):
+            if b - a >= FPS // 2 and a < end and lvl_at(a) >= 1:
+                put([L_SIG, R_SIG, *CH4], a, min(b, end), ON)
+                put([L_SIG, R_SIG, *CH4], min(b, end), min(b, end) + 28, RAMP_OFF_500)
 
     for t in kicks:
         if t < end and lvl_at(t) >= 1:
@@ -343,8 +353,8 @@ def generate(src, out, name="lightshow", max_mode=False, model="m3"):
     if model not in MODELS:
         raise ValueError(f"unknown model: {model} (pick one of {', '.join(MODELS)})")
     out.mkdir(parents=True, exist_ok=True)
-    onset, low, mid, high, energy = analyze(load_audio(src))
-    data, bpm, nbeats = build(onset, low, mid, high, energy, max_mode, model)
+    onset, low, mid, high, energy, vocal = analyze(load_audio(src))
+    data, bpm, nbeats = build(onset, low, mid, high, energy, max_mode, model, vocal)
 
     # Tesla's official per-closure limits (Open/Dance/Close count)
     limits = {L_MIRROR: 20, R_MIRROR: 20, CHARGE_PORT: 3, LIFTGATE: 6,
