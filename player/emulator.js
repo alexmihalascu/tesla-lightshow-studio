@@ -5,7 +5,8 @@
 export const VEHICLES = {
   m3: { name: 'Model 3', hint: '2021 și mai nou', family: '3y' },
   m3old: { name: 'Model 3 (până în oct. 2020)', hint: 'Stopurile și lumina de număr merg împreună', family: '3y', tailsPlate: true },
-  my: { name: 'Model Y', hint: 'Cu hayon electric', family: '3y', liftgate: true },
+  my: { name: 'Model Y', hint: '2020–2024, cu hayon electric', family: '3y', liftgate: true },
+  myj: { name: 'Model Y Juniper', hint: '2025 și mai nou, bară de lumini față și spate', family: '3y', liftgate: true },
   ms: { name: 'Model S', hint: '2021 și mai nou, cu mânere retractabile', family: 'sx', liftgate: true, handles: true },
   mx: { name: 'Model X', hint: '2021 și mai nou, cu uși Falcon', family: 'sx', liftgate: true, falcon: true, frontDoors: true, rearFogNA: true },
   ct: { name: 'Cybertruck', hint: 'Light bar-uri, frunk electric', family: 'ct', liftgate: true },
@@ -62,8 +63,12 @@ export function createEmulator(cfg) {
   const cl = {};
   const out = { rgb: {}, frontBar: new Float32Array(60), rearBar: new Float32Array(52), offroad: new Float32Array(6) };
 
+  // pos = cât e deschis (0..1). Oglinzile pornesc deschise (desfăcute); Close le pliază.
   function reset() {
-    for (const c of CLOSURES) cl[c.key] = { pos: 0, target: 0, dance: false, phase: Math.random() * 6 };
+    for (const c of CLOSURES) {
+      const start = c.key.startsWith('mirror') ? 1 : 0;
+      cl[c.key] = { pos: start, target: start, dance: false, phase: Math.random() * 6 };
+    }
   }
   reset();
 
@@ -72,7 +77,7 @@ export function createEmulator(cfg) {
   function stepClosures(frame, dt) {
     for (const c of CLOSURES) {
       const o = cl[c.key];
-      if (!c.has(v) || c.ch >= frame.length) { o.pos = o.target = 0; o.dance = false; continue; }
+      if (!c.has(v) || c.ch >= frame.length) { o.dance = false; continue; }
       const s = closureState(frame[c.ch]);
       o.dance = false;
       if (s === 2 && c.dance && (c.key.startsWith('win') || o.pos > 0.95 || o.danceStarted)) {

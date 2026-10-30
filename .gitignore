@@ -4,3 +4,5 @@ __pycache__/
 .playwright-mcp/
 *.wav
 *.mp3
+models/
+*.glb

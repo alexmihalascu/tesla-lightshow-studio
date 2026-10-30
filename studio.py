@@ -14,6 +14,7 @@ PORT = 8642
 TESLA_CANDIDATES = [os.environ.get("TESLA_XLIGHTS_DIR", ""), ROOT / "tesla_xlights_show_folder",
                     Path.home() / "Downloads" / "tesla_xlights_show_folder"]
 TESLA_FILES = (".obj", ".mtl", ".png", ".jpg")
+MODELS_DIR = ROOT / "models"  # modele 3D proprii (.glb), nu intră în git
 AUDIO = (".wav", ".mp3")
 NAME_RE = re.compile(r"^[\w\- ]{1,60}$")
 CLOSURES = {"mirrors": (34, 20), "windows": (36, 6), "liftgate": (40, 6), "chargePort": (45, 3)}
@@ -40,10 +41,12 @@ def tesla_dir():
 
 
 def tesla_layout():
-    """Modelele de lumini/închideri și mesh-urile 3D din xlights_rgbeffects.xml (coordonate xLights, Y în sus)."""
+    """Modelele de lumini/închideri și mesh-urile 3D din xlights_rgbeffects.xml (coordonate xLights, Y în sus),
+    plus modelele 3D proprii din models/*.glb (ex. model3.glb, modely.glb)."""
+    custom = sorted(p.stem for p in MODELS_DIR.glob("*.glb"))
     folder = tesla_dir()
     if not folder:
-        return None
+        return {"models": [], "meshes": [], "custom": custom} if custom else None
     root = ET.parse(folder / "xlights_rgbeffects.xml").getroot()
     num = lambda e, k, d=0.0: float(e.get(k, d))
     models = []
@@ -72,7 +75,7 @@ def tesla_layout():
                        "pos": [num(v, "WorldPosX"), num(v, "WorldPosY"), num(v, "WorldPosZ")],
                        "scale": [num(v, "ScaleX", 1), num(v, "ScaleY", 1), num(v, "ScaleZ", 1)],
                        "rot": [num(v, "RotateX"), num(v, "RotateY"), num(v, "RotateZ")]})
-    return {"models": models, "meshes": meshes}
+    return {"models": models, "meshes": meshes, "custom": custom}
 
 
 def fseq_stats(path):
@@ -162,6 +165,19 @@ class Handler(SimpleHTTPRequestHandler):
             layout = tesla_layout()
             return self.send_json(layout or {"error": "Nu găsesc proiectul Tesla xLights (tesla_xlights_show_folder)."},
                                   200 if layout else 404)
+        m = re.fullmatch(r"/models/([\w\-]+\.glb)", path)
+        if m:
+            target = MODELS_DIR / m[1]
+            if not target.is_file():
+                return self.send_json({"error": "Modelul 3D nu există."}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "model/gltf-binary")
+            self.send_header("Content-Length", str(target.stat().st_size))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            with open(target, "rb") as f:
+                shutil.copyfileobj(f, self.wfile)
+            return
         if path.startswith("/tesla/"):
             folder = tesla_dir()
             rel = Path(path[len("/tesla/"):])

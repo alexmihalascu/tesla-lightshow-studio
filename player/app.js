@@ -125,7 +125,8 @@ async function mount3d() {
     box.querySelector('.view-msg')?.remove();
     const note = document.createElement('p');
     note.className = 'view-note';
-    note.textContent = key === 'ct' ? 'Cybertruck oficial Tesla. Mișcările apar ca indicatori galbeni.'
+    note.textContent = !s.official ? `Model 3D: ${s.attribution || 'model propriu'}`
+      : key === 'ct' ? 'Cybertruck oficial Tesla. Mișcările apar ca indicatori galbeni.'
       : key === 'ms' ? 'Model S oficial Tesla'
       : `Model S oficial Tesla, cu emulatorul pentru ${VEHICLES[key].name}`;
     const bar = document.createElement('div');
@@ -230,7 +231,7 @@ audio.addEventListener('play', () => $('#playIcon').setAttribute('d', 'M6 4h3v12
 audio.addEventListener('pause', () => $('#playIcon').setAttribute('d', 'M6 4 16 10 6 16Z'));
 $('#play').addEventListener('click', () => (audio.paused ? audio.play() : audio.pause()));
 addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && /^[1-6]$/.test(e.key)) {
+  if ((e.ctrlKey || e.metaKey) && /^[1-7]$/.test(e.key)) {
     e.preventDefault();
     setCfg('vehicle', Object.keys(VEHICLES)[+e.key - 1]);
     return;
@@ -572,7 +573,7 @@ $('#newForm').addEventListener('submit', async e => {
     const r = await fetch('/api/generate', {
       method: 'POST', body: picked,
       headers: { 'X-Name': encodeURIComponent(name), 'X-Filename': encodeURIComponent(picked.name),
-        'X-Max': cfg.elements === 'max' ? '1' : '0', 'X-Model': cfg.vehicle === 'm3old' ? 'm3' : cfg.vehicle },
+        'X-Max': cfg.elements === 'max' ? '1' : '0', 'X-Model': { m3old: 'm3', myj: 'my' }[cfg.vehicle] || cfg.vehicle },
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error);

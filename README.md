@@ -27,7 +27,20 @@ Vederea 3D folosește proiectul oficial Tesla pentru xLights, care **nu** e incl
 - în `~/Downloads`
 - oriunde, cu variabila de mediu `TESLA_XLIGHTS_DIR`
 
-Tesla oferă oficial doar Model S și Cybertruck în 3D. Pentru Model 3, Y și X, vederea 3D folosește Model S, cu emulatorul modelului ales (canalele sunt aceleași pentru toate modelele).
+Tesla oferă oficial doar Model S și Cybertruck în 3D.
+
+### Modele 3D proprii (Model 3, Y, Y Juniper, X)
+
+Pune fișiere `.glb` (de exemplu de pe Sketchfab, cu licență Creative Commons) în folderul `models/`, care nu intră în git:
+
+| Fișier | Folosit pentru |
+|---|---|
+| `models/model3.glb` | Model 3 |
+| `models/modely.glb` | Model Y (2020–2024) |
+| `models/modely-juniper.glb` | Model Y Juniper (2025+) |
+| `models/modelx.glb` | Model X |
+
+Studio orientează și scalează automat modelul, găsește lămpile după numele materialelor (sau le împarte pe față/spate și stânga/dreapta), decupează oglinzile și le pliază, iar unde modelul nu are piese separate (geamuri, portbagaj) folosește indicatori. Numele autorului și licența din fișier apar în vederea 3D, cum cer licențele CC-BY.
 
 ## Generator din linia de comandă
 
