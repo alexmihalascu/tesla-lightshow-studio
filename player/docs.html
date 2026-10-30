@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentație Light Show</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23000'/%3E%3Cpath d='M7 19c3-6 15-6 18 0' stroke='%23ffa628' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='10' cy='21' r='2.5' fill='%23fff'/%3E%3Ccircle cx='22' cy='21' r='2.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ui.css">
+<style>
+  body { overflow: hidden; }
+  .docs { display: grid; grid-template-columns: 264px 1fr; height: 100vh; }
+  .docs .settings-nav { overflow-y: auto; }
+  .docs .settings-nav .nav-item { font-size: 14px; }
+  .doc-main { overflow-y: auto; scroll-behavior: smooth; }
+  .doc-main header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 16px 0 24px; border-bottom: 1px solid var(--line); background: rgba(0,0,0,.85); backdrop-filter: blur(8px); }
+  .doc-main header .grow { flex: 1; }
+  .content { max-width: 920px; padding: 8px 32px 80px; }
+  section { padding-top: 26px; scroll-margin-top: 56px; }
+  h2 { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin: 6px 0 6px; }
+  h3 { font-size: 15px; font-weight: 600; margin: 22px 0 10px; }
+  .lead { color: var(--muted); margin: 0 0 14px; max-width: 70ch; }
+  .content p { max-width: 72ch; }
+  .card + .card { margin-top: 12px; }
+  .row p code, td code, li code { font: 12.5px ui-monospace, "Cascadia Code", monospace; background: #151515; border: 1px solid #222; border-radius: 5px; padding: 0 5px; color: #ddd; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .table-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #050505; }
+  .table-card + .table-card { margin-top: 12px; }
+  th, td { text-align: left; padding: 9px 12px; vertical-align: top; }
+  th { font-weight: 500; color: var(--muted); font-size: 12.5px; background: #0a0a0a; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tr + tr td { border-top: 1px solid var(--line); }
+  td.num { font-variant-numeric: tabular-nums; color: var(--muted); width: 48px; }
+  td.dim, tr.dim td { color: var(--faint); }
+  .tag { display: inline-block; font-size: 12px; font-weight: 500; padding: 1px 7px; border-radius: 6px; background: #161616; color: #cfcfcf; white-space: nowrap; }
+  .tag.ok { background: rgba(62,207,142,.12); color: #7fe0b2; }
+  .tag.no { background: #141414; color: var(--faint); }
+  .tag.warn { background: rgba(255,166,40,.12); color: #f3c58a; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 14px; }
+  .tab { height: 30px; padding: 0 11px; border-radius: 8px; font-weight: 600; color: var(--muted); border: 1px solid var(--line-2); }
+  .tab[aria-pressed="true"] { background: var(--active); color: var(--text); border-color: #333; }
+  ul.clean { margin: 0; padding-left: 18px; color: #d6d6d6; }
+  ul.clean li + li { margin-top: 4px; }
+  .callout { display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px; background: rgba(255,166,40,.08); color: #f3c58a; margin: 12px 0; }
+  .callout svg { margin-top: 2px; }
+  .kbd-inline kbd { font: 500 12px var(--font); background: #222; border: 1px solid #2f2f2f; border-radius: 5px; padding: 1px 6px; }
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    .docs { grid-template-columns: 1fr; height: auto; }
+    .docs .settings-nav { display: none; }
+    .doc-main { overflow: visible; }
+    .content { padding: 8px 16px 60px; }
+    .table-card { overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="docs">
+  <nav class="settings-nav" aria-label="Cuprins">
+    <a class="nav-item" href="./" style="margin-bottom:6px"><svg viewBox="0 0 20 20"><path d="M12 5 7 10l5 5"/></svg>Înapoi în Studio</a>
+    <p class="nav-label">Pornire</p>
+    <a class="nav-item" href="#rulare"><svg viewBox="0 0 20 20"><path d="M6 4 16 10 6 16Z"/></svg>Rularea în mașină</a>
+    <a class="nav-item" href="#stick"><svg viewBox="0 0 20 20"><rect x="6" y="2.5" width="8" height="6" rx="1"/><rect x="4" y="8.5" width="12" height="9" rx="2"/></svg>Stickul USB</a>
+    <a class="nav-item" href="#fisiere"><svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3V17.5H5z"/><path d="M12 2.5v3h3"/></svg>Fișierele show-ului</a>
+    <p class="nav-label">Canale</p>
+    <a class="nav-item" href="#canale"><svg viewBox="0 0 20 20"><path d="M4 5h12M4 10h12M4 15h12"/></svg>Harta canalelor</a>
+    <a class="nav-item" href="#ramp"><svg viewBox="0 0 20 20"><path d="M3 15 9 5l3 5 5-3"/></svg>Ramp și luminozitate</a>
+    <a class="nav-item" href="#inchideri"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M10 4v12"/></svg>Închideri</a>
+    <p class="nav-label">Modele</p>
+    <a class="nav-item" href="#modele"><svg viewBox="0 0 20 20"><path d="M3 13v-2l2-4h10l2 4v2z"/><circle cx="6.5" cy="14" r="1.5"/><circle cx="13.5" cy="14" r="1.5"/></svg>Particularități</a>
+    <a class="nav-item" href="#cybertruck"><svg viewBox="0 0 20 20"><path d="M2 14 7 7h11v7z"/></svg>Cybertruck: 200 de canale</a>
+    <a class="nav-item" href="#studio"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg>Cum generează Studio</a>
+  </nav>
+
+  <main class="doc-main">
+    <header>
+      <nav class="crumbs"><span class="crumb-muted">Documentație</span><span class="sep">/</span><strong>Tesla Light Show</strong></nav>
+      <span class="grow"></span>
+      <a class="text-btn" href="https://github.com/teslamotors/light-show" target="_blank" rel="noopener">Sursa oficială</a>
+    </header>
+    <div class="content">
+
+      <section id="rulare">
+        <h2>Rularea în mașină</h2>
+        <p class="lead">Un show personalizat merge pe orice model suportat: același fișier rulează pe Model S, 3, X, Y și Cybertruck. Fiecare mașină folosește doar ce are.</p>
+        <div class="card">
+          <div class="row"><div><strong>Modele suportate</strong><p>Model S (2021+), Model 3, Model X (2021+), Model Y și Cybertruck, cu software v11.0 (2021.44.25) sau mai nou. Mai multe show-uri pe același stick: de la 2023.44.25.</p></div></div>
+          <div class="row"><div><strong>Pornirea show-ului</strong><p>Pune stickul într-un port USB din față, USB-C sau din torpedou și așteaptă câteva secunde. În Toybox alegi Light Show, apoi Schedule Show, și selectezi show-ul din listă.</p></div></div>
+          <div class="row"><div><strong>Dacă nu apare</strong><p>Dacă fereastra se numește „Light Show” în loc de „Custom Light Show”, stickul nu respectă cerințele de format sau de foldere. Dacă fișierele există dar au o problemă, mașina afișează un mesaj de eroare.</p></div></div>
+        </div>
+      </section>
+
+      <section id="stick">
+        <h2>Stickul USB</h2>
+        <p class="lead">Mașina citește show-urile doar dintr-un stick pregătit exact așa.</p>
+        <div class="callout"><svg viewBox="0 0 20 20"><path d="M10 3 18 17H2z"/><path d="M10 8v4M10 14.5v.5"/></svg>
+          <span>Stickul nu are voie să conțină folderul <strong>TeslaCam</strong> în rădăcină. Dacă îl folosești și pentru camera de bord, ține show-urile pe alt stick.</span></div>
+        <div class="card">
+          <div class="row"><div><strong>Folderul LightShow</strong><p>În rădăcina stickului, scris exact <code>LightShow</code> (contează literele mari).</p></div><span class="tag ok">obligatoriu</span></div>
+          <div class="row"><div><strong>Perechi cu același nume</strong><p>Fiecare show are un <code>.fseq</code> și un <code>.mp3</code> sau <code>.wav</code> cu același nume, de exemplu <code>show1.fseq</code> cu <code>show1.wav</code>.</p></div><span class="tag ok">obligatoriu</span></div>
+          <div class="row"><div><strong>Format</strong><p>exFAT, FAT32, MS-DOS FAT, ext3 sau ext4. NTFS nu e suportat.</p></div><span class="tag ok">obligatoriu</span></div>
+          <div class="row"><div><strong>Fără alte foldere speciale</strong><p>Fără <code>TeslaCam</code> și fără fișiere de actualizare pentru hărți sau software.</p></div><span class="tag warn">des întâlnit</span></div>
+        </div>
+      </section>
+
+      <section id="fisiere">
+        <h2>Fișierele show-ului</h2>
+        <div class="table-card"><table>
+          <tr><th>Fișier</th><th>Cerință</th></tr>
+          <tr><td><strong>.fseq</strong></td><td>FSEQ versiunea 2.0, <strong>necomprimat</strong> (în xLights: Preferences, Sequences, FSEQ Version, „V2 Uncompressed”). 48 de canale, sau 200 pentru light bar-ul Cybertruck și luminile RGB din interior.</td></tr>
+          <tr><td><strong>Pas între cadre</strong></td><td>Între 15 și 100 ms. Recomandat: 20 ms.</td></tr>
+          <tr><td><strong>Durată</strong></td><td>Maximum 4 ore. Limita de comenzi pentru lumini a fost eliminată.</td></tr>
+          <tr><td><strong>Audio</strong></td><td>.mp3 sau .wav (recomandat), la 44,1 kHz. Fișierele la 48 kHz nu se sincronizează corect.</td></tr>
+        </table></div>
+      </section>
+
+      <section id="canale">
+        <h2>Harta canalelor</h2>
+        <p class="lead">Numerele sunt cele din xLights (de la 1). Alege modelul ca să vezi ce face fiecare canal pe mașina ta.</p>
+        <div class="tabs" id="modelTabs" role="group" aria-label="Model"></div>
+        <div class="table-card"><table id="channelTable"></table></div>
+      </section>
+
+      <section id="ramp">
+        <h2>Ramp și luminozitate</h2>
+        <p class="lead">Majoritatea luminilor doar se aprind și se sting. Câteva pot face trecerea lin, după valoarea efectului din xLights.</p>
+        <div class="table-card"><table>
+          <tr><th>Efect</th><th>Luminozitate în xLights</th><th>Tastă</th></tr>
+          <tr><td>Stinge instant</td><td>0% (timeline gol)</td><td></td></tr>
+          <tr><td>Stinge în 500 ms</td><td>10%</td><td class="kbd-inline"><kbd>W</kbd></td></tr>
+          <tr><td>Stinge în 1000 ms</td><td>20%</td><td class="kbd-inline"><kbd>S</kbd></td></tr>
+          <tr><td>Stinge în 2000 ms</td><td>30%</td><td class="kbd-inline"><kbd>X</kbd></td></tr>
+          <tr><td>Aprinde în 500 ms</td><td>70%</td><td class="kbd-inline"><kbd>E</kbd></td></tr>
+          <tr><td>Aprinde în 1000 ms</td><td>80%</td><td class="kbd-inline"><kbd>D</kbd></td></tr>
+          <tr><td>Aprinde în 2000 ms</td><td>90%</td><td class="kbd-inline"><kbd>C</kbd></td></tr>
+          <tr><td>Aprinde instant</td><td>100%</td><td class="kbd-inline"><kbd>F</kbd></td></tr>
+        </table></div>
+        <h3>Ce lumini fac ramp, pe fiecare model</h3>
+        <div class="table-card"><table>
+          <tr><th>Canal</th><th>Model S</th><th>Model X</th><th>Model 3/Y</th><th>Cybertruck</th></tr>
+          <tr><td>Faza lungă exterioară</td><td colspan="3">Ramp pe farurile LED cu reflector, aprins/stins pe cele cu proiector</td><td>Ramp</td></tr>
+          <tr><td>Faza lungă interioară</td><td>Ramp</td><td>Ramp</td><td>Ramp</td><td>Ramp</td></tr>
+          <tr><td>Semnătură</td><td>Aprins/stins</td><td>Aprins/stins</td><td>Ramp</td><td class="dim">nu are</td></tr>
+          <tr><td>Canalele 4–6</td><td>Ramp</td><td>Ramp</td><td>Ramp</td><td class="dim">nu are</td></tr>
+          <tr><td>Semnalizare față</td><td>Aprins/stins</td><td>Aprins/stins</td><td>Ramp</td><td>Ramp</td></tr>
+          <tr><td>Lumini laterale față</td><td>Aprins/stins</td><td>Aprins/stins</td><td>Aprins/stins</td><td>Ramp</td></tr>
+          <tr><td>Frână, semnalizare spate</td><td>Aprins/stins</td><td>Aprins/stins</td><td>Aprins/stins</td><td>Luminozitate completă</td></tr>
+          <tr><td>Light bar față, spate, offroad</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td>Luminozitate completă</td></tr>
+        </table></div>
+        <ul class="clean" style="margin-top:12px">
+          <li>Ramp-ul doar prelungește aprinderea sau stingerea. Nu se poate ține o lumină la jumătate de intensitate, cu excepția canalelor Cybertruck cu luminozitate completă.</li>
+          <li>Ca lumina să ajungă sigur la 0% sau 100%, efectul trebuie să dureze cu cel puțin 50 ms mai mult decât ramp-ul.</li>
+          <li>Pe mașinile fără luminozitate completă, orice valoare peste 50% înseamnă aprins.</li>
+          <li>Canalul 4 dă durata ramp-ului pentru canalele 4, 5 și 6, deci uneori trebuie pus un efect pe canalul 4 chiar dacă el nu se aprinde.</li>
+          <li>Pragul minim ca o lumină să se vadă e 15 ms. Pentru un efect plăcut, ține lumina aprinsă sau stinsă cel puțin 100 ms.</li>
+        </ul>
+      </section>
+
+      <section id="inchideri">
+        <h2>Închideri</h2>
+        <p class="lead">Oglinzile, geamurile, portbagajul, ușile și trapa primesc comenzi, cu o limită pe show. Doar Open, Dance și Close consumă din limită.</p>
+        <div class="table-card"><table>
+          <tr><th>Element</th><th>Canale</th><th>Model S</th><th>Model X</th><th>Model 3/Y</th><th>Cybertruck</th><th>Dance</th><th>Limită</th></tr>
+          <tr><td>Portbagaj</td><td class="num">41</td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td><span class="tag warn">doar cu hayon electric</span></td><td><span class="tag ok">frunk</span></td><td>da</td><td>6</td></tr>
+          <tr><td>Oglinzi</td><td class="num">35–36</td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td>nu</td><td>20</td></tr>
+          <tr><td>Trapă de încărcare</td><td class="num">46</td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td>LED curcubeu</td><td>3</td></tr>
+          <tr><td>Geamuri</td><td class="num">37–40</td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td><span class="tag ok">da</span></td><td>da</td><td>6</td></tr>
+          <tr><td>Mânere uși</td><td class="num">42–45</td><td><span class="tag ok">da</span></td><td><span class="tag no">nu</span></td><td><span class="tag no">nu</span></td><td><span class="tag no">nu</span></td><td>nu</td><td>20</td></tr>
+          <tr><td>Uși față</td><td class="num">33–34</td><td><span class="tag no">nu</span></td><td><span class="tag ok">da</span></td><td><span class="tag no">nu</span></td><td><span class="tag no">nu</span></td><td>nu</td><td>6</td></tr>
+          <tr><td>Uși Falcon</td><td class="num">31–32</td><td><span class="tag no">nu</span></td><td><span class="tag ok">da</span></td><td><span class="tag no">nu</span></td><td><span class="tag no">nu</span></td><td>da</td><td>6</td></tr>
+        </table></div>
+        <h3>Comenzi</h3>
+        <div class="table-card"><table>
+          <tr><th>Comandă</th><th>Luminozitate în xLights</th><th>Ce face</th></tr>
+          <tr><td>Idle</td><td>timeline gol</td><td>Se oprește, dar termină întâi o deschidere sau închidere începută.</td></tr>
+          <tr><td>Open</td><td>25% (<span class="kbd-inline"><kbd>Q</kbd></span>)</td><td>Se deschide complet, apoi se oprește.</td></tr>
+          <tr><td>Dance</td><td>50% (<span class="kbd-inline"><kbd>A</kbd></span>)</td><td>Oscilează între două poziții. La trapă, LED-ul clipește în culorile curcubeului.</td></tr>
+          <tr><td>Close</td><td>75% (<span class="kbd-inline"><kbd>Z</kbd></span>)</td><td>Se închide complet, apoi se oprește.</td></tr>
+          <tr><td>Stop</td><td>100% (<span class="kbd-inline"><kbd>F</kbd></span>)</td><td>Se oprește imediat.</td></tr>
+        </table></div>
+        <h3>Durate aproximative</h3>
+        <div class="table-card"><table>
+          <tr><th>Mișcare</th><th>Secunde</th></tr>
+          <tr><td>Deschidere portbagaj</td><td>14</td></tr><tr><td>Închidere portbagaj</td><td>4</td></tr>
+          <tr><td>Deschidere uși față</td><td>22</td></tr><tr><td>Închidere uși față</td><td>3</td></tr>
+          <tr><td>Deschidere uși Falcon</td><td>20</td></tr><tr><td>Închidere uși Falcon</td><td>8</td></tr>
+          <tr><td>Geamuri</td><td>4</td></tr><tr><td>Oglinzi, mânere, trapă</td><td>2</td></tr>
+        </table></div>
+        <ul class="clean" style="margin-top:12px">
+          <li>În afară de geamuri, elementele dansează doar dacă sunt deja deschise. Lasă timp între Open și Dance.</li>
+          <li>Dansul e limitat termic. Recomandarea Tesla e de cel mult ~30 s pe show.</li>
+          <li>Trapa de încărcare se închide singură după 2 minute de la deschidere.</li>
+          <li>Pe Model X, geamurile mișcate în timp ce se mișcă ușile pot declanșa protecția anti-prindere și opresc show-ul.</li>
+          <li>Muzica se aude doar din boxele din habitaclu, deci geamurile deschise ajută.</li>
+        </ul>
+      </section>
+
+      <section id="modele">
+        <h2>Particularități pe modele</h2>
+        <div class="card">
+          <div class="row"><div><strong>Model 3 și Y: canalele 4–6</strong><p>Sunt o singură lampă pe fiecare parte, aprinsă dacă oricare dintre ele e aprins. Durata ramp-ului vine de la canalul 4.</p></div></div>
+          <div class="row"><div><strong>Model 3 și Y: poziție și lumini laterale</strong><p>Luminile de poziție și cele laterale funcționează împreună și se aprind la oricare dintre cele 4 canale (stânga/dreapta). Pentru un flash, toate patru trebuie să fie stinse între aprinderi.</p></div></div>
+          <div class="row"><div><strong>Model S: poziție și lumini laterale</strong><p>Merg împreună, dar separat pe stânga și pe dreapta.</p></div></div>
+          <div class="row"><div><strong>Lumini laterale</strong><p>Există doar pe mașinile din America de Nord.</p></div></div>
+          <div class="row"><div><strong>Ceață față și poziție</strong><p>Lipsesc pe Model 3 Standard Range Plus. Nicio altă lumină nu le ține locul.</p></div></div>
+          <div class="row"><div><strong>Ceață spate</strong><p>Pe mașinile din afara Americii de Nord și pe Model X din America de Nord.</p></div></div>
+          <div class="row"><div><strong>Model 3 construit înainte de octombrie 2020</strong><p>Stopurile stânga, dreapta și lumina de număr merg împreună. Canalul pentru lumina de număr nu are efect.</p></div></div>
+        </div>
+      </section>
+
+      <section id="cybertruck">
+        <h2>Cybertruck: 200 de canale</h2>
+        <p class="lead">Show-urile cu 200 de canale adaugă light bar-urile Cybertruck și luminile RGB din interior. Show-urile vechi, cu 48 de canale, sunt remapate automat.</p>
+        <div class="table-card"><table>
+          <tr><th>Canale</th><th>Element</th><th>Note</th></tr>
+          <tr><td class="num">47–106</td><td>Light bar față</td><td>60 de LED-uri, segmentele dreapta, centru și stânga (11, 38, 11).</td></tr>
+          <tr><td class="num">111–162</td><td>Light bar spate</td><td>52 de LED-uri, toate pe ușa benei.</td></tr>
+          <tr><td class="num">167–172</td><td>Light bar offroad</td><td>Opțional: 2 lumini laterale și 4 frontale.</td></tr>
+          <tr><td class="num">176–193</td><td>RGB interior</td><td>Ecranul central și 5 segmente de lumini ambientale, câte 3 canale (R, G, B). Se văd și din afară.</td></tr>
+        </table></div>
+        <h3>Remapare pentru show-urile vechi</h3>
+        <ul class="clean">
+          <li>Lămpile de marșarier urmează stopurile stânga și dreapta.</li>
+          <li>Marcajele laterale spate urmează repetoarele laterale.</li>
+          <li>Frunk-ul electric urmează canalul portbagajului, iar lumina din frunk urmează luminile de poziție.</li>
+          <li>Luminile din bena urmează canalul de marșarier.</li>
+          <li>Semnalizările spate sunt dezactivate.</li>
+        </ul>
+      </section>
+
+      <section id="studio">
+        <h2>Cum generează Studio</h2>
+        <p class="lead">Generatorul analizează melodia (tempo, beat-uri, bas, energie) și scrie un .fseq cu 48 de canale, validat după regulile de mai sus.</p>
+        <div class="card">
+          <div class="row"><div><strong>Lumini</strong><p>Pulsuri pe beat pentru semnătură și canalele 4–6, flash-uri pe bas pentru frână și faza scurtă, alternanță stânga/dreapta la refren. Fiecare aprindere durează cel puțin 120 ms.</p></div></div>
+          <div class="row"><div><strong>Oglinzi și trapă</strong><p>Oglinzile se pliază pe cele mai puternice lovituri, în cel mult 20 de comenzi. Trapa se deschide în cel mai lung refren, cu LED curcubeu, în 3 comenzi.</p></div></div>
+          <div class="row"><div><strong>Tot ce se mișcă</strong><p>Geamurile dansează în cele mai lungi 3 refrene, cel mult ~24 s în total, apoi se închid la final. Pe Model Y, S, X și Cybertruck se deschide și portbagajul sau frunk-ul, iar pe Model S ies și mânerele. Ușile rămân pe loc, pentru siguranță.</p></div></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+<script type="module">
+  import { VEHICLES } from './emulator.js';
+  const CH = [
+    ['Faza lungă exterioară stânga', 'light'], ['Faza lungă exterioară dreapta', 'light'], ['Faza lungă interioară stânga', 'light'], ['Faza lungă interioară dreapta', 'light'],
+    ['Semnătură stânga', 'sig'], ['Semnătură dreapta', 'sig'], ['Canal 4 stânga', 'c46'], ['Canal 4 dreapta', 'c46'], ['Canal 5 stânga', 'c46'], ['Canal 5 dreapta', 'c46'],
+    ['Canal 6 stânga', 'c46'], ['Canal 6 dreapta', 'c46'], ['Semnalizare față stânga', 'light'], ['Semnalizare față dreapta', 'light'], ['Ceață față stânga', 'fog'], ['Ceață față dreapta', 'fog'],
+    ['Poziție (aux park) stânga', 'aux'], ['Poziție (aux park) dreapta', 'aux'], ['Lumină laterală stânga', 'marker'], ['Lumină laterală dreapta', 'marker'],
+    ['Repetor lateral stânga', 'rep'], ['Repetor lateral dreapta', 'rep'], ['Semnalizare spate stânga', 'rturn'], ['Semnalizare spate dreapta', 'rturn'], ['Frână', 'light'],
+    ['Stop stânga', 'tail'], ['Stop dreapta', 'tail'], ['Marșarier', 'rev'], ['Ceață spate', 'rfog'], ['Lumină număr', 'plate'],
+    ['Ușă Falcon stânga', 'falcon'], ['Ușă Falcon dreapta', 'falcon'], ['Ușă față stânga', 'door'], ['Ușă față dreapta', 'door'], ['Oglindă stânga', 'all'], ['Oglindă dreapta', 'all'],
+    ['Geam stânga față', 'all'], ['Geam stânga spate', 'all'], ['Geam dreapta față', 'all'], ['Geam dreapta spate', 'all'], ['Portbagaj / frunk', 'lift'],
+    ['Mâner stânga față', 'handle'], ['Mâner stânga spate', 'handle'], ['Mâner dreapta față', 'handle'], ['Mâner dreapta spate', 'handle'], ['Trapă de încărcare', 'all'],
+  ];
+  // [text, stare] pe model pentru fiecare tip de canal; stare: ok | warn | no
+  const NOTE = {
+    light: () => ['Funcționează', 'ok'],
+    sig: v => v === 'ct' ? ['Cybertruck nu are acest canal', 'no'] : ['Funcționează', 'ok'],
+    c46: v => v === 'ct' ? ['Cybertruck nu are acest canal', 'no'] : VEHICLES[v].family === '3y' ? ['Canalele 4–6 sunt o singură lampă', 'warn'] : ['Control separat, ramp dat de canalul 4', 'ok'],
+    fog: v => v === 'ct' ? ['Funcționează', 'ok'] : v.startsWith('m3') ? ['Lipsește pe Standard Range Plus', 'warn'] : ['Funcționează', 'ok'],
+    aux: v => v === 'ct' ? ['Aprinde lumina din frunk', 'warn'] : VEHICLES[v].family === '3y' ? ['Merge împreună cu cele 4 canale de poziție', 'warn'] : ['Merge cu lumina laterală de pe aceeași parte', 'warn'],
+    marker: v => ['Doar în America de Nord', 'warn'],
+    rep: v => v === 'ct' ? ['Aprinde și marcajele laterale spate', 'warn'] : ['Funcționează', 'ok'],
+    rturn: v => v === 'ct' ? ['Dezactivat pe Cybertruck', 'no'] : ['Funcționează', 'ok'],
+    tail: v => v === 'ct' ? ['Aprinde lămpile de marșarier', 'warn'] : v === 'm3old' ? ['Stopurile și numărul merg împreună', 'warn'] : ['Funcționează', 'ok'],
+    rev: v => v === 'ct' ? ['Aprinde luminile din bena', 'warn'] : ['Funcționează', 'ok'],
+    rfog: v => v === 'mx' ? ['Funcționează', 'ok'] : ['Doar în afara Americii de Nord', 'warn'],
+    plate: v => v === 'm3old' ? ['Fără efect, merge cu stopurile', 'no'] : ['Funcționează', 'ok'],
+    falcon: v => v === 'mx' ? ['Dance da, limită 6', 'ok'] : ['Doar Model X', 'no'],
+    door: v => v === 'mx' ? ['Limită 6', 'ok'] : ['Doar Model X', 'no'],
+    lift: v => v === 'm3' || v === 'm3old' ? ['Doar cu hayon electric', 'warn'] : v === 'ct' ? ['Frunk electric, limită 6', 'ok'] : ['Dance da, limită 6', 'ok'],
+    handle: v => v === 'ms' ? ['Limită 20', 'ok'] : ['Doar Model S', 'no'],
+    all: () => ['Funcționează', 'ok'],
+  };
+  const tabs = document.getElementById('modelTabs'), table = document.getElementById('channelTable');
+  let model = (() => { try { return localStorage.getItem('vehicle') || 'm3'; } catch { return 'm3'; } })();
+  if (!VEHICLES[model]) model = 'm3';
+  function draw() {
+    tabs.innerHTML = Object.entries(VEHICLES).map(([k, v]) => `<button class="tab" aria-pressed="${k === model}" data-k="${k}">${v.name}</button>`).join('');
+    table.innerHTML = `<tr><th>#</th><th>Canal</th><th>Tip</th><th>Pe ${VEHICLES[model].name}</th></tr>` + CH.map(([name, kind], i) => {
+      const [text, st] = NOTE[kind](model);
+      return `<tr class="${st === 'no' ? 'dim' : ''}"><td class="num">${i + 1}</td><td>${name}</td><td>${i < 30 ? 'Lumină' : 'Închidere'}</td><td><span class="tag ${st}">${text}</span></td></tr>`;
+    }).join('');
+  }
+  tabs.addEventListener('click', e => {
+    const b = e.target.closest('.tab');
+    if (!b) return;
+    model = b.dataset.k;
+    try { localStorage.setItem('vehicle', model); } catch { /* doar pentru sesiunea curentă */ }
+    draw();
+  });
+  draw();
+</script>
+</body>
+</html>

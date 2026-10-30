@@ -1,0 +1,6 @@
+shows/
+tesla_xlights_show_folder/
+__pycache__/
+.playwright-mcp/
+*.wav
+*.mp3
