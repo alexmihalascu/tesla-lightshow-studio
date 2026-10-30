@@ -1,7 +1,7 @@
 """Generates a Tesla light show (lightshow.fseq + lightshow.wav) from an mp3.
 Default target: Model 3 2022 (no power liftgate). Usage: python make_show.py "song.mp3"
 """
-import struct, subprocess, sys, time
+import hashlib, importlib.util, shutil, struct, subprocess, sys, time
 from pathlib import Path
 import numpy as np
 
@@ -56,6 +56,28 @@ def analyze(y):
     # vocal/melody band level (not flux): sustained while someone sings or a lead plays
     vocal = np.convolve(mag[:, (freqs > 300) & (freqs < 3000)].mean(axis=1), np.ones(15) / 15, "same")
     return onset, low, mid, high, energy, vocal
+
+
+STEMS_CACHE = Path(__file__).resolve().parent.parent / "shows" / ".stems"
+
+
+def separate(src):
+    """Splits the song into vocals/drums/bass/other with Demucs (cached per song).
+    Returns None when Demucs isn't installed, so the generator falls back to the full mix."""
+    if importlib.util.find_spec("demucs") is None:
+        return None
+    out = STEMS_CACHE / hashlib.sha1(Path(src).read_bytes()).hexdigest()[:16]
+    stems = {s: out / f"{s}.wav" for s in ("vocals", "drums", "bass", "other")}
+    if not all(p.exists() for p in stems.values()):
+        tmp = STEMS_CACHE / "_run"
+        subprocess.run([sys.executable, "-m", "demucs", "-n", "htdemucs", "-o", str(tmp), str(src)],
+                       check=True, capture_output=True)
+        found = next((tmp / "htdemucs").iterdir())
+        out.mkdir(parents=True, exist_ok=True)
+        for s, p in stems.items():
+            shutil.move(str(found / f"{s}.wav"), p)
+        shutil.rmtree(tmp, ignore_errors=True)
+    return {s: load_audio(p) for s, p in stems.items()}
 
 
 def tempo_period(onset):
@@ -113,8 +135,17 @@ def segments(mask):
     return list(zip(edges[::2], edges[1::2]))
 
 
-def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None):
+def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None, stems=None):
     n = len(onset)
+    fit = lambda x: np.pad(x[:n], (0, max(0, n - len(x))))
+    voice = other_on = bass_on = None
+    if stems:
+        # Separated tracks: drums give cleaner kick/snare/hi-hat, vocals say when someone actually sings,
+        # "other" (synths, guitars, piano) leads the instrumental parts, bass drives the park lights
+        _, low, mid, high, _, _ = (fit(x) for x in stems["drums"])
+        v = fit(stems["vocals"][4])
+        voice = np.convolve(v > 0.3 * np.percentile(v, 95), np.ones(13) / 13, "same") > 0.5
+        other_on, bass_on = fit(stems["other"][0]), fit(stems["bass"][1])
     data = np.zeros((n, NCH), np.uint8)
     lvl = levels(energy, (25, 55) if max_mode else (35, 70))
     period = tempo_period(onset)
@@ -212,9 +243,19 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None)
             put([L_OUTER, R_OUTER, L_INNER, R_INNER, *POS, L_REP, R_REP, BRAKE, REVERSE, PLATE], a, a + 2 * flash, ON)
             pulse([L_FTURN, R_FTURN], a, RAMP_OFF_2S, 2 * FPS + 3)
 
-    # Vocal phrases: signature + channels 4-6 stay lit while the melody/vocal is strong (>= 0.5 s), then fade
+    # Instrumental parts (no voice): the lead instrument plays the fog lights and turn signals, left/right
+    if voice is not None:
+        for j, t in enumerate(pick_peaks(other_on, min_gap=9, k=1.0)):
+            if t < end and lvl_at(t) >= 1 and not voice[t]:
+                put([L_FOG, L_FTURN] if j % 2 == 0 else [R_FOG, R_FTURN], t, t + flash, ON)
+        # Bass notes: park lights / side markers (one output on Model 3/Y, so short flashes with gaps)
+        for t in pick_peaks(bass_on, min_gap=12, k=1.2):
+            if t < end and lvl_at(t) >= 1:
+                put(POS, t, t + flash, ON)
+
+    # Vocal phrases: signature + channels 4-6 stay lit while someone sings (>= 0.5 s), then fade
     if vocal is not None:
-        sing = vocal > np.percentile(vocal, 65)
+        sing = voice if voice is not None else vocal > np.percentile(vocal, 65)
         for a, b in segments(sing):
             if b - a >= FPS // 2 and a < end and lvl_at(a) >= 1:
                 put([L_SIG, R_SIG, *CH4], a, min(b, end), ON)
@@ -354,7 +395,9 @@ def generate(src, out, name="lightshow", max_mode=False, model="m3"):
         raise ValueError(f"unknown model: {model} (pick one of {', '.join(MODELS)})")
     out.mkdir(parents=True, exist_ok=True)
     onset, low, mid, high, energy, vocal = analyze(load_audio(src))
-    data, bpm, nbeats = build(onset, low, mid, high, energy, max_mode, model, vocal)
+    stems = separate(src)
+    feats = {k: analyze(y) for k, y in stems.items()} if stems else None
+    data, bpm, nbeats = build(onset, low, mid, high, energy, max_mode, model, vocal, feats)
 
     # Tesla's official per-closure limits (Open/Dance/Close count)
     limits = {L_MIRROR: 20, R_MIRROR: 20, CHARGE_PORT: 3, LIFTGATE: 6,

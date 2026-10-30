@@ -19,6 +19,14 @@ python studio.py
 
 Opens `http://127.0.0.1:8642`. The server only listens locally.
 
+### Better analysis with Demucs (optional)
+
+```sh
+pip install demucs soundfile
+```
+
+With [Demucs](https://github.com/facebookresearch/demucs) installed, the generator splits each song into vocals, drums, bass and other instruments (about 2 minutes per song on a CPU, cached in `shows/.stems/`). Drums drive the brake, fog and turn signals; the signature lights follow the actual vocal phrases; in instrumental parts the lead instrument plays the fog lights and turn signals; bass notes flash the park lights. Without Demucs it falls back to analyzing the full mix.
+
 ### Official 3D models
 
 The 3D view uses Tesla's official xLights project, which is **not** included here. Download [teslamotors/light-show](https://github.com/teslamotors/light-show), unzip `xlights/tesla_xlights_show_folder.zip` and put the `tesla_xlights_show_folder` folder in one of these places:
