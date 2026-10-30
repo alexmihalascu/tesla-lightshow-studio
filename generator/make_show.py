@@ -215,10 +215,12 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None,
                     put([BRAKE], int(t), int(t) + flash, ON)
             continue
         if L == 0:
-            # Quiet: headlights "breathe" (slow ramp), park lights stay on, signature pulses on the beat
-            mid_bar = a + (b - a) // 2
-            put([L_INNER, R_INNER], a, mid_bar, RAMP_ON_2S)
-            put([L_INNER, R_INNER], mid_bar, b, RAMP_OFF_2S)
+            # Quiet: headlights "breathe" once every 4 bars (not every bar, or they never go dark),
+            # park lights mark the downbeat, signature pulses on the beat
+            if bi % 4 == 0:
+                mid_bar = a + (b - a) // 2
+                put([L_INNER, R_INNER], a, mid_bar, RAMP_ON_2S)
+                put([L_INNER, R_INNER], mid_bar, b, RAMP_OFF_2S)
             put(POS, a, a + 2 * flash, ON)  # quiet: park lights only mark the downbeat
             for t in bar_beats:
                 pulse([L_SIG, R_SIG, *CH4], int(t))
@@ -265,7 +267,7 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None,
         if t < end and lvl_at(t) >= 1:
             put([BRAKE], t, t + flash, ON)
             if lvl_at(t) == 1:
-                pulse([L_INNER, R_INNER], t)
+                put([L_INNER, R_INNER], t, t + flash, ON)  # no fade tail: kicks ~500 ms apart would keep them lit
             else:
                 put([REAR_FOG], t, t + flash, ON)
     for t in snares:
@@ -275,6 +277,12 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None,
     for j, t in enumerate(hats):
         if t < end and lvl_at(t) == 2:
             pulse([L_FTURN, L_REP] if j % 2 == 0 else [R_FTURN, R_REP], t)
+
+    # Silence (breaks, pauses, fade-outs >= 1 s): every light goes dark, even though the beat grid keeps going
+    calm = np.convolve(energy, np.ones(FPS // 2) / (FPS // 2), "same") < 0.08 * np.percentile(energy, 90)
+    for a, b in segments(calm):
+        if b - a >= FPS and a < end:
+            data[a:min(b, end), :30] = OFF
 
     # Mirrors: fold on the strongest chorus kicks (8 pairs = 16/20, 10 = 20/20 with --max)
     strong = sorted((t for t in kicks if lvl[t] == 2 and 2 * FPS < t < end - 5 * FPS), key=lambda t: -low[t])
@@ -303,16 +311,21 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3", vocal=None,
             data[a:min(b, a + 8 * FPS), WINDOWS] = C_DANCE
         data[end:end + FPS, WINDOWS] = C_CLOSE
 
-    if max_mode and model in MODELS_WITH_LIFTGATE and loud:
-        # Liftgate/frunk: opens (~14 s) before the longest chorus, dances in the chorus, then closes
-        a, b = max(loud, key=lambda s: s[1] - s[0])
-        open_at = max(2 * FPS, a - 15 * FPS)
-        dance_from = max(a, open_at + 15 * FPS)
-        dance_to = min(b, dance_from + 15 * FPS)
-        if dance_to - dance_from >= 4 * FPS and dance_to + 5 * FPS < end:
-            data[open_at:open_at + FPS, LIFTGATE] = C_OPEN
-            data[dance_from:dance_to, LIFTGATE] = C_DANCE
-            data[dance_to:dance_to + FPS, LIFTGATE] = C_CLOSE
+    if max_mode and model in MODELS_WITH_LIFTGATE:
+        # Liftgate/frunk: opens (~14 s) before a chorus, dances in it, then closes. Tries the longest
+        # choruses first, then any louder part, so short songs or fragmented choruses still get it.
+        # (a chorus running into the outro still counts: the dance is cut 5 s before the end)
+        cands = [s for x in (lvl == 2, lvl >= 1) for s in sorted(segments(x), key=lambda s: s[0] - s[1])
+                 if s[1] - s[0] >= 4 * FPS]
+        for a, b in cands:
+            open_at = max(2 * FPS, a - 15 * FPS)
+            dance_from = max(a, open_at + 15 * FPS)
+            dance_to = min(b, dance_from + 15 * FPS, end - 5 * FPS - 1)
+            if dance_to - dance_from >= 4 * FPS:
+                data[open_at:open_at + FPS, LIFTGATE] = C_OPEN
+                data[dance_from:dance_to, LIFTGATE] = C_DANCE
+                data[dance_to:dance_to + FPS, LIFTGATE] = C_CLOSE
+                break
 
     if max_mode and model == "ms":
         # Door handles (Model S only) present together with the mirror folds => 2 commands per hit, max 20

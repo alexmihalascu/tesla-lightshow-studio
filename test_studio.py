@@ -35,6 +35,18 @@ def test_closure_command_counting():
     assert make_show.closure_commands(col) == 3  # Stop doesn't count toward the limit
 
 
+def test_silence_goes_dark_and_liftgate_opens():
+    n = 60 * make_show.FPS
+    rng = np.random.default_rng(0)
+    onset = rng.random(n) * 0.3
+    onset[::25] = 5.0                                           # 120 BPM
+    energy = np.where(np.arange(n) % 2000 < 1200, 1.0, 0.4)     # alternating loud/medium parts
+    energy[1000:1300] = 0.0                                     # 6 s break
+    data, _bpm, _nb = make_show.build(onset, onset, onset, onset, energy, True, "my")
+    assert not data[1050:1250, :30].any(), "lights stay on during silence"
+    assert make_show.closure_commands(data[:, make_show.LIFTGATE]) == 3
+
+
 def test_name_validation():
     assert studio.NAME_RE.match("Sculati presedintele")
     assert not studio.NAME_RE.match("../etc")

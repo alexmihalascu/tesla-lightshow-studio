@@ -2,6 +2,10 @@
 
 A local studio for Tesla Light Shows: turn a song into a show, preview it on your car (2D and 3D), and copy it to your USB drive.
 
+![Player: 2D front/rear views, 3D view and channel timeline](docs/screenshots/player.png)
+
+![Projects page](docs/screenshots/projects.png)
+
 - **Generator**: analyzes the song (tempo, beats, bars, kick/snare/hi-hat, sections) and writes an uncompressed `.fseq` v2 that respects Tesla's official limits. Quiet parts "breathe", verses pulse, build-ups chase left to right, choruses sweep the headlights like a matrix.
 - **Per-model emulator**: Model 3, Model 3 (before Oct 2020), Model Y, Model Y Juniper, Model S, Model X and Cybertruck, plus region (Europe or North America) and headlight type. It applies the rules from Tesla's docs: combined channels 4–6 on 3/Y, combined park lights, Cybertruck remapping, which closures each model has.
 - **Player**: 2D (side, front, rear), 3D, or both side by side, with camera angles, a channel timeline and a sync offset for Bluetooth/speaker latency.
