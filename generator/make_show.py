@@ -1,18 +1,18 @@
-"""Generează un Tesla light show (lightshow.fseq + lightshow.wav) dintr-un mp3.
-Țintă: Model 3 2022 (fără hayon electric). Folosire: python make_show.py "melodie.mp3"
+"""Generates a Tesla light show (lightshow.fseq + lightshow.wav) from an mp3.
+Default target: Model 3 2022 (no power liftgate). Usage: python make_show.py "song.mp3"
 """
 import struct, subprocess, sys, time
 from pathlib import Path
 import numpy as np
 
 FPS, STEP_MS, SR, NCH = 50, 20, 22050, 48
-HOP = SR // FPS  # 441 eșantioane = 20 ms
-# Calibrare: deplasează toate luminile în timp (ms) dacă pe mașină par în avans/întârziere.
+HOP = SR // FPS  # 441 samples = 20 ms
+# Calibration: shifts every light in time (ms) if they look early/late on the car.
 OFFSET_MS = 0
 
 # Canale (0-based) din layout-ul oficial Tesla xLights
 L_OUTER, R_OUTER, L_INNER, R_INNER, L_SIG, R_SIG = 0, 1, 2, 3, 4, 5
-CH4 = (6, 7, 8, 9, 10, 11)  # pe Model 3 sunt o singură ieșire (OR)
+CH4 = (6, 7, 8, 9, 10, 11)  # one output (OR) on Model 3
 L_FTURN, R_FTURN, L_FOG, R_FOG, L_AUX, R_AUX = 12, 13, 14, 15, 16, 17
 L_MARK, R_MARK, L_REP, R_REP, L_RTURN, R_RTURN = 18, 19, 20, 21, 22, 23
 BRAKE, L_TAIL, R_TAIL, REVERSE, REAR_FOG, PLATE = 24, 25, 26, 27, 28, 29
@@ -49,7 +49,7 @@ def analyze(y):
         return f / (f.std() + 1e-9)
 
     onset = flux(freqs < 11000)
-    low = flux(freqs < 150)                       # tobă mare / bas
+    low = flux(freqs < 150)                       # kick / bass
     mid = flux((freqs > 1000) & (freqs < 4000))   # snare, clap
     high = flux((freqs > 2000) & (freqs < 8000))  # cinele
     energy = np.sqrt((frames ** 2).mean(axis=1))
@@ -59,11 +59,11 @@ def analyze(y):
 def tempo_period(onset):
     o = onset - onset.mean()
     ac = np.correlate(o, o, "full")[len(o) - 1:]
-    lags = np.arange(15, 50.01, 0.05)  # 200..60 BPM, rezoluție sub un cadru
-    # comb: perioada reală e puternică și la 2, 3, 4 beat-uri; sincopele (1.5 beat) nu
+    lags = np.arange(15, 50.01, 0.05)  # 200..60 BPM, sub-frame resolution
+    # comb: the real period is also strong at 2, 3, 4 beats; syncopation (1.5 beats) is not
     comb = sum(np.interp(lags * k, np.arange(len(ac)), ac) for k in (1, 2, 3, 4))
     best = lags[np.argmax(comb)]
-    # comb-ul favorizează jumătate de tempo; ia tempo dublu dacă e aproape la fel de puternic (<= 180 BPM)
+    # the comb favours half tempo; take double tempo if it is almost as strong (<= 180 BPM)
     near = (lags > best / 2 * 0.97) & (lags < best / 2 * 1.03) & (lags >= 60 * FPS / 180)
     if near.any() and comb[near].max() >= 0.6 * comb.max():
         best = lags[near][np.argmax(comb[near])]
@@ -71,7 +71,7 @@ def tempo_period(onset):
 
 
 def track_beats(onset, period, alpha=100.0):
-    """Beat tracking prin programare dinamică (Ellis 2007)."""
+    """Beat tracking with dynamic programming (Ellis 2007)."""
     n = len(onset)
     score, back = onset.astype(float).copy(), -np.ones(n, int)
     lo, hi = int(period * 2), max(1, int(period / 2))
@@ -101,7 +101,7 @@ def pick_peaks(x, min_gap, k=1.0):
 
 
 def levels(energy, cuts=(35, 70)):
-    """0 = liniștit, 1 = mediu, 2 = refren/drop. Netezit pe ~3 s."""
+    """0 = quiet, 1 = medium, 2 = chorus/drop. Smoothed over ~3 s."""
     s = np.convolve(energy, np.ones(3 * FPS) / (3 * FPS), "same")
     return np.digitize(s, np.percentile(s, cuts))
 
@@ -117,29 +117,29 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
     lvl = levels(energy, (25, 55) if max_mode else (35, 70))
     period = tempo_period(onset)
     beats = track_beats(onset, period)
-    # Sincronizare: fiecare beat pe vârful real al loviturii (±2 cadre = ±40 ms)
+    # Sync: move each beat onto the actual onset peak (±2 frames = ±40 ms)
     beats = np.array([b - 2 + int(np.argmax(onset[max(0, b - 2):b + 3])) if b >= 2 else b for b in beats])
-    grid = np.unique(np.concatenate([beats + int(round(k * period / 4)) for k in range(4)]))  # șaisprezecimi
+    grid = np.unique(np.concatenate([beats + int(round(k * period / 4)) for k in range(4)]))  # 16th notes
 
     def snap(events):
-        """Evenimentele apropiate de grila ritmică (<= 2 cadre) cad exact pe ea."""
+        """Events close to the rhythmic grid (<= 2 frames) land exactly on it."""
         if not len(events):
             return events
         idx = np.clip(np.searchsorted(grid, events), 1, len(grid) - 1)
         near = np.where(events - grid[idx - 1] < grid[idx] - events, grid[idx - 1], grid[idx])
         return np.where(np.abs(near - events) <= 2, near, events)
 
-    kicks = snap(pick_peaks(low, min_gap=11, k=1.2))   # >= 220 ms între flash-uri
+    kicks = snap(pick_peaks(low, min_gap=11, k=1.2))   # >= 220 ms between flashes
     snares = snap(pick_peaks(mid, min_gap=11, k=1.4))
     hats = snap(pick_peaks(high, min_gap=11, k=1.5))
-    flash = 6  # 120 ms (Tesla recomandă >= 100 ms)
-    # Măsuri de 4 timpi: primul timp e faza cu cel mai mult bas pe beat
+    flash = 6  # 120 ms (Tesla recommends >= 100 ms)
+    # 4/4 bars: the downbeat is the beat phase with the most bass
     phase = int(np.argmax([low[beats[p::4]].sum() for p in range(4)]))
     bars = beats[phase::4]
     bar_end = np.r_[bars[1:], n]
-    # Nivelul pe măsură (stabil, nu pe cadru); „build” = cele 2 măsuri dinaintea unui refren
+    # Level per bar (stable, not per frame); "build" = the 2 bars before a chorus
     bar_lvl = [int(np.median(lvl[a:max(a + 1, b)])) for a, b in zip(bars, bar_end)]
-    build_bar = [0] * len(bars)  # 0 = nu, 1 = prima măsură de build, 2 = ultima (mai rapidă)
+    build_bar = [0] * len(bars)  # 0 = no, 1 = first build bar, 2 = last (faster)
     for i in range(1, len(bars)):
         if bar_lvl[i] == 2 and bar_lvl[i - 1] < 2:
             for j, kind in ((i - 2, 1), (i - 1, 2)):
@@ -157,14 +157,14 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
         put(chs, t + flash, t + flash + tail, decay)
 
     end = n - 3 * FPS
-    # Intro: stopuri + semnătură intră lin; outro: totul se stinge în 2 s
+    # Intro: tail lights + signature fade in; outro: everything fades out over 2 s
     put([L_TAIL, R_TAIL], 0, end, ON)
     put([L_TAIL, R_TAIL, L_SIG, R_SIG], 0, 2 * FPS + 3, RAMP_ON_2S)
     put([L_TAIL, R_TAIL, L_SIG, R_SIG, L_INNER, R_INNER], end, n - 5, RAMP_OFF_2S)
 
-    q = period / 4  # o șaisprezecime
+    q = period / 4  # one 16th note
     half = max(flash, int(period * 0.4))
-    POS = [L_AUX, R_AUX, L_MARK, R_MARK]  # pe Model 3/Y sunt o singură ieșire: pauzele contează
+    POS = [L_AUX, R_AUX, L_MARK, R_MARK]  # one output on Model 3/Y: gaps matter
     CHASE = [L_FTURN, L_FOG, L_SIG, L_INNER, L_OUTER, R_OUTER, R_INNER, R_SIG, R_FOG, R_FTURN]
     for bi, (a, b) in enumerate(zip(bars, bar_end)):
         if a >= end:
@@ -173,7 +173,7 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
         L = bar_lvl[bi]
         bar_beats = beats[(beats >= a) & (beats < b)]
         if build_bar[bi]:
-            # Pregătirea refrenului: lumina fuge stânga-dreapta, întâi pe optimi, apoi pe șaisprezecimi
+            # Build-up: light chases left-right, first on 8ths, then on 16ths
             step = period / 2 if build_bar[bi] == 1 else q
             for k, t in enumerate(np.arange(a, b, step)):
                 ch = CHASE[k % len(CHASE)] if (k // len(CHASE)) % 2 == 0 else CHASE[::-1][k % len(CHASE)]
@@ -182,7 +182,7 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
                     put([BRAKE], int(t), int(t) + flash, ON)
             continue
         if L == 0:
-            # Liniștit: farurile „respiră” (ramp lent), pozițiile stau aprinse, semnătura pulsează pe beat
+            # Quiet: headlights "breathe" (slow ramp), park lights stay on, signature pulses on the beat
             mid_bar = a + (b - a) // 2
             put([L_INNER, R_INNER], a, mid_bar, RAMP_ON_2S)
             put([L_INNER, R_INNER], mid_bar, b, RAMP_OFF_2S)
@@ -194,19 +194,19 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
             t = int(t)
             pulse([L_SIG, R_SIG, *CH4], t)
             if L == 1:
-                # Strofă: faza lungă alternează stânga/dreapta, cu semnalizarea spate de pe aceeași parte
+                # Verse: main beams alternate left/right, with the rear turn signal on the same side
                 put([L_OUTER, L_RTURN] if i % 2 == 0 else [R_OUTER, R_RTURN], t, t + half, ON)
                 continue
-            # Refren: baleiaj „matrix” pe faruri, exterior -> interior -> interior -> exterior,
-            # cu direcția inversată la fiecare măsură
+            # Chorus: "matrix" sweep across the headlights, outer -> inner -> inner -> outer,
+            # reversing direction every bar
             sweep = [L_OUTER, L_INNER, R_INNER, R_OUTER]
             for s, ch in enumerate(sweep if bi % 2 == 0 else sweep[::-1]):
                 put([ch], int(t + s * q), int(t + s * q) + max(flash, int(q)), ON)
-            off = int(t + period / 2)  # contratimp: lumini de poziție
+            off = int(t + period / 2)  # off-beat: park lights
             put(POS, off, off + flash, ON)
-            if i % 2 == 1:  # timpii 2 și 4: ceață față + spate
+            if i % 2 == 1:  # beats 2 and 4: front + rear fog
                 put([L_FOG, R_FOG, REAR_FOG], t, t + half, ON)
-        if L == 2 and bi % 4 == 0:  # la fiecare 4 măsuri de refren: lovitură cu tot
+        if L == 2 and bi % 4 == 0:  # every 4 chorus bars: hit everything
             put([L_OUTER, R_OUTER, L_INNER, R_INNER, *POS, L_REP, R_REP, BRAKE, REVERSE, PLATE], a, a + 2 * flash, ON)
             pulse([L_FTURN, R_FTURN], a, RAMP_OFF_2S, 2 * FPS + 3)
 
@@ -219,13 +219,13 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
                 put([REAR_FOG], t, t + flash, ON)
     for t in snares:
         if t < end and lvl_at(t) >= 1:
-            # snare: procitoare + repetoare în strofă, flash cu toate farurile în refren
+            # snare: fog lights + repeaters in verses, flash every headlight in choruses
             put([L_FOG, R_FOG, L_REP, R_REP] if lvl_at(t) == 1 else [L_FOG, R_FOG, L_OUTER, R_OUTER, L_INNER, R_INNER], t, t + flash, ON)
     for j, t in enumerate(hats):
         if t < end and lvl_at(t) == 2:
             pulse([L_FTURN, L_REP] if j % 2 == 0 else [R_FTURN, R_REP], t)
 
-    # Oglinzi: se pliază pe cele mai puternice kick-uri din refren (8 perechi = 16/20, în --max 10 = 20/20)
+    # Mirrors: fold on the strongest chorus kicks (8 pairs = 16/20, 10 = 20/20 with --max)
     strong = sorted((t for t in kicks if lvl[t] == 2 and 2 * FPS < t < end - 5 * FPS), key=lambda t: -low[t])
     chosen = []
     for t in strong:
@@ -235,7 +235,7 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
         data[t:t + FPS, [L_MIRROR, R_MIRROR]] = C_CLOSE
         data[t + 3 * FPS:t + 4 * FPS, [L_MIRROR, R_MIRROR]] = C_OPEN
 
-    # Trapa de încărcare: se deschide + LED curcubeu în cel mai lung refren (3/3 comenzi)
+    # Charge port: opens + rainbow LED in the longest chorus (3/3 commands)
     loud = [s for s in segments(lvl == 2) if s[1] - s[0] >= 10 * FPS and s[1] < end]
     if loud:
         a, b = max(loud, key=lambda s: s[1] - s[0])
@@ -246,14 +246,14 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
 
     choruses = [s for s in segments(lvl == 2) if s[1] - s[0] >= 4 * FPS and s[1] < end]
     if max_mode and choruses:
-        # Geamuri: dans în cele mai lungi 3 refrene, max 8 s fiecare (~24 s total, sub limita termică),
+        # Windows: dance in the 3 longest choruses, max 8 s each (~24 s total, under the thermal limit),
         # apoi Close la final => 4/6 comenzi per geam
         for a, b in sorted(sorted(choruses, key=lambda s: s[0] - s[1])[:3]):
             data[a:min(b, a + 8 * FPS), WINDOWS] = C_DANCE
         data[end:end + FPS, WINDOWS] = C_CLOSE
 
     if max_mode and model in MODELS_WITH_LIFTGATE and loud:
-        # Portbagaj/frunk: se deschide (~14 s) înainte de cel mai lung refren, dansează în refren, apoi se închide
+        # Liftgate/frunk: opens (~14 s) before the longest chorus, dances in the chorus, then closes
         a, b = max(loud, key=lambda s: s[1] - s[0])
         open_at = max(2 * FPS, a - 15 * FPS)
         dance_from = max(a, open_at + 15 * FPS)
@@ -264,7 +264,7 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
             data[dance_to:dance_to + FPS, LIFTGATE] = C_CLOSE
 
     if max_mode and model == "ms":
-        # Mânerele ușilor (doar Model S) ies odată cu plierea oglinzilor => 2 comenzi per moment, max 20
+        # Door handles (Model S only) present together with the mirror folds => 2 commands per hit, max 20
         for t in sorted(chosen):
             data[t:t + FPS, HANDLES] = C_OPEN
             data[t + 3 * FPS:t + 4 * FPS, HANDLES] = C_CLOSE
@@ -276,7 +276,7 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
 
 
 def closure_commands(col):
-    """Comenzi Open/Dance/Close (cele care contează la limită) pe un canal."""
+    """Open/Dance/Close commands (the ones that count toward the limit) on one channel."""
     st = (col // 32 + 1) // 2
     starts = np.flatnonzero(np.diff(np.r_[0, st]) != 0)
     return int(np.isin(st[starts], [1, 2, 3]).sum())
@@ -294,7 +294,7 @@ MODEL_NAMES = ["Left Outer Main Beam", "Right Outer Main Beam", "Left Inner Main
 
 
 def write_xsq(path, data, media="lightshow.wav"):
-    """Secvență xLights (proiectul oficial Tesla): efecte 'On' cu luminozitate = valoarea canalului."""
+    """xLights sequence (official Tesla project): 'On' effects with brightness = channel value."""
     pcts = sorted({round(int(v) * 100 / 255) for v in np.unique(data) if v})
     ref = {p: i for i, p in enumerate(pcts)}
     db = "".join(f"    <Effect>{'' if p == 100 else f'E_TEXTCTRL_Eff_On_End={p},E_TEXTCTRL_Eff_On_Start={p}'}</Effect>\n"
@@ -339,22 +339,22 @@ def write_fseq(path, data):
 
 
 def generate(src, out, name="lightshow", max_mode=False, model="m3"):
-    """Analizează `src` și scrie <out>/<name>.fseq, .xsq, .wav. Întoarce (data, bpm, nbeats, dance_s)."""
+    """Analyzes `src` and writes <out>/<name>.fseq, .xsq, .wav. Returns (data, bpm, nbeats, dance_s)."""
     if model not in MODELS:
-        raise ValueError(f"model necunoscut: {model} (alege din {', '.join(MODELS)})")
+        raise ValueError(f"unknown model: {model} (pick one of {', '.join(MODELS)})")
     out.mkdir(parents=True, exist_ok=True)
     onset, low, mid, high, energy = analyze(load_audio(src))
     data, bpm, nbeats = build(onset, low, mid, high, energy, max_mode, model)
 
-    # Limitele oficiale Tesla per închidere (Open/Dance/Close contează)
+    # Tesla's official per-closure limits (Open/Dance/Close count)
     limits = {L_MIRROR: 20, R_MIRROR: 20, CHARGE_PORT: 3, LIFTGATE: 6,
               **{w: 6 for w in WINDOWS}, **{h: 20 for h in HANDLES}}
     for ch, lim in limits.items():
         c = closure_commands(data[:, ch])
-        assert c <= lim, f"canal {ch}: {c} comenzi > limita {lim}"
+        assert c <= lim, f"channel {ch}: {c} commands > limit {lim}"
     dance_s = (data[:, WINDOWS[0]] == C_DANCE).sum() / FPS
-    assert dance_s <= 30, f"geamuri: {dance_s:.0f} s de dans > 30 s (limită termică)"
-    assert not data[:, 30:34].any(), "ușile (inclusiv Falcon) rămân idle: risc de oprire anti-prindere"
+    assert dance_s <= 30, f"windows: {dance_s:.0f} s of dancing > 30 s (thermal limit)"
+    assert not data[:, 30:34].any(), "doors (including Falcon Wing) stay idle: pinch protection could stop the show"
 
     write_fseq(out / f"{name}.fseq", data)
     write_xsq(out / f"{name}.xsq", data, media=f"{name}.wav")
@@ -364,15 +364,15 @@ def generate(src, out, name="lightshow", max_mode=False, model="m3"):
 
 
 if __name__ == "__main__":
-    # python make_show.py melodie.mp3 [--max] [--model m3|my|ms|mx|ct] [--out DIR] [--name NUME]
+    # python make_show.py song.mp3 [--max] [--model m3|my|ms|mx|ct] [--out DIR] [--name NAME]
     sys.stdout.reconfigure(encoding="utf-8")
     args = sys.argv[1:]
     opt = lambda k, d: args[args.index(k) + 1] if k in args else d
     src = Path(args[0])
     out = Path(opt("--out", src.parent / "LightShow"))
     data, bpm, nbeats, dance_s = generate(src, out, opt("--name", "lightshow"), "--max" in args, opt("--model", "m3"))
-    print(f"{len(data)} cadre ({len(data) / FPS:.1f} s), ~{bpm:.0f} BPM, {nbeats} beat-uri")
-    print(f"oglinzi: {closure_commands(data[:, L_MIRROR])}/20, trapă: {closure_commands(data[:, CHARGE_PORT])}/3, "
-          f"geamuri: {closure_commands(data[:, WINDOWS[0]])}/6 ({dance_s:.0f} s dans), "
-          f"portbagaj: {closure_commands(data[:, LIFTGATE])}/6, mânere: {closure_commands(data[:, HANDLES[0]])}/20")
+    print(f"{len(data)} frames ({len(data) / FPS:.1f} s), ~{bpm:.0f} BPM, {nbeats} beats")
+    print(f"mirrors: {closure_commands(data[:, L_MIRROR])}/20, charge port: {closure_commands(data[:, CHARGE_PORT])}/3, "
+          f"windows: {closure_commands(data[:, WINDOWS[0]])}/6 ({dance_s:.0f} s dancing), "
+          f"liftgate: {closure_commands(data[:, LIFTGATE])}/6, handles: {closure_commands(data[:, HANDLES[0]])}/20")
     print(f"-> {out}")

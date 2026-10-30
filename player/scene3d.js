@@ -1,6 +1,6 @@
-// Scenă 3D: modelele oficiale Tesla din proiectul xLights (servite local la /tesla/...) sau un model propriu
-// din models/*.glb (servit la /models/...). Pe modelele oficiale, lămpile stau la coordonatele exacte din
-// xlights_rgbeffects.xml; pe modelul propriu se aprind chiar materialele farurilor, stopurilor, semnalizărilor.
+// 3D scene: official Tesla models from the xLights project (served locally at /tesla/...) or your own model
+// from models/*.glb (served at /models/...). On official models the lamps sit at the exact coordinates from
+// xlights_rgbeffects.xml; on your own model the headlight, tail and turn signal materials themselves light up.
 import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
@@ -13,7 +13,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const WHITE = '#f4f8ff', AMBER = '#ffa628', RED = '#ff2b2b', CLOSURE = '#e8c547';
 
-// Nume model xLights (fără prefixul "CT ") -> [cheie emulator, culoare]
+// xLights model name (without the "CT " prefix) -> [emulator key, color]
 const LAMPS = {
   'Left Outer Main Beam': ['outerL', WHITE], 'Right Outer Main Beam': ['outerR', WHITE],
   'Left Inner Main Beam': ['innerL', WHITE], 'Right Inner Main Beam': ['innerR', WHITE],
@@ -45,14 +45,14 @@ const CLOSURE_KEYS = {
   'Right Rear Door Handle': 'handleRR', 'Charge Port': 'chargePort',
 };
 
-// Model propriu (.glb): material -> lămpi. Partea (stânga/dreapta) se decide după poziția reală a piesei.
+// Your own model (.glb): material -> lamps. Left/right is decided by where the part actually is.
 const GLB_LIGHTS = [
-  // [material, culoare, lămpi, intensitate] — roșul are intensitate mică ca să nu se satureze în alb
+  // [material, color, lamps, intensity] — red stays dim so it doesn't saturate to white
   [/front_light/i, WHITE, s => [`outer${s}`, `inner${s}`, `sig${s}`, `c4${s}`], 1.6],
   [/indicator_.f|indicator_lights/i, AMBER, s => [`fturn${s}`], 2],
   [/indicator_.r|light_turn_.r/i, AMBER, s => [`rturn${s}`], 2],
   [/fog/i, WHITE, s => [`fog${s}`], 1.2],
-  [/rear_light/i, RED, s => [`tail${s}`, 'brake'], 1.1, { tail: 0.2 }], // poziție slab, frână puternic
+  [/rear_light/i, RED, s => [`tail${s}`, 'brake'], 1.1, { tail: 0.2 }], // tail dim, brake bright
   [/break|brake/i, RED, () => ['brake'], 1.1],
   [/rev(light|ese)/i, WHITE, s => [`reverse${s}`], 1],
   [/platnomor|plate/i, WHITE, () => ['plate'], 0.5],
@@ -72,7 +72,7 @@ function glowTexture() {
   return t;
 }
 
-// Pozițiile nodurilor unui model xLights (linie simplă, polilinie cu segmente sau model custom)
+// Node positions of an xLights model (single line, segmented polyline or custom model)
 function nodePositions(m) {
   const P = a => new THREE.Vector3(...a);
   if (m.points.length >= 2) {
@@ -93,7 +93,7 @@ function nodePositions(m) {
 }
 
 // ---- Geometrie pentru modelele .glb ----
-// Pozițiile vârfurilor unui mesh în coordonate de lume (x, y, z consecutive)
+// Mesh vertex positions in world coordinates (consecutive x, y, z)
 function worldPositions(mesh) {
   const P = mesh.geometry.attributes.position, e = mesh.matrixWorld.elements, out = new Float32Array(P.count * 3);
   for (let i = 0; i < P.count; i++) {
@@ -106,7 +106,7 @@ function worldPositions(mesh) {
 }
 const triIndex = g => g.index ? g.index.array : Uint32Array.from({ length: g.attributes.position.count }, (_, i) => i);
 
-// Împarte triunghiurile unui mesh pe grupuri (după centrul lor în lume); geometriile noi sunt deja în lume
+// Splits a mesh's triangles into groups (by world-space centroid); new geometries are already in world space
 function splitTriangles(mesh, classify) {
   const W = worldPositions(mesh), idx = triIndex(mesh.geometry), buckets = {};
   for (let i = 0; i < idx.length; i += 3) {
@@ -124,13 +124,13 @@ function splitTriangles(mesh, classify) {
   return out;
 }
 
-// Oglinzile exterioare: triunghiurile de deasupra liniei roților care ies lateral peste lățimea caroseriei
+// Exterior mirrors: triangles above the wheel line that stick out past the body width
 function mirrorTriangles(root) {
   root.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
   const data = [];
   root.traverse(o => { if (o.isMesh && o.visible) data.push({ m: o, W: worldPositions(o), idx: triIndex(o.geometry) }); });
-  let half = 0; // jumătate din lățimea caroseriei (jos, fără bare)
+  let half = 0; // half the body width (low, without bumpers)
   for (const { W } of data) {
     for (let i = 0; i < W.length; i += 3) {
       if (W[i + 1] - box.min.y < 0.42 * s.y && Math.abs(W[i] - c.x) < 0.33 * s.x) half = Math.max(half, Math.abs(W[i + 2] - c.z));
@@ -151,12 +151,12 @@ function mirrorTriangles(root) {
   return res;
 }
 
-// Fascicul de far: con aditiv, mai luminos lângă far și pe axă, estompat spre margini și capăt
-// (lumina „volumetrică” clasică: intensitatea depinde de cât de frontal privim suprafața conului)
+// Headlight beam: additive cone, brighter near the lamp and on its axis, fading at the edges and the end
+// (classic fake volumetric light: intensity depends on how head-on we see the cone surface)
 function beamMesh(origin, side) {
   const len = 1150, geo = new THREE.ConeGeometry(260, len, 48, 12, true);
   geo.translate(0, -len / 2, 0);
-  geo.rotateZ(Math.PI / 2 - 0.07); // vârful în far, deschiderea spre +X, ușor în jos
+  geo.rotateZ(Math.PI / 2 - 0.07); // apex at the lamp, opening toward +X, slightly down
   geo.rotateY(side === 'L' ? 0.04 : -0.04);
   const mat = new THREE.ShaderMaterial({
     uniforms: { uOpacity: { value: 0 }, uLen: { value: len }, uColor: { value: new THREE.Color('#fff1d6') } },
@@ -206,15 +206,15 @@ export async function createScene3D(container, layout, vehicleKey) {
   controls.minDistance = 300;
   controls.maxDistance = 4000;
 
-  // Modelele .glb au materiale PBR reale (vopsea deschisă): noaptea are nevoie de mult mai puțină lumină
+  // .glb models have real PBR materials (light paint): night needs much less light
   const glb = pick.kind === 'glb';
   scene.add(new THREE.HemisphereLight('#a9b8cf', '#080808', glb ? 0.32 : 1.25));
-  const key = new THREE.DirectionalLight('#dfe6f0', glb ? 0 : 1.5); // .glb: fără „lună”, reflexiile pe clearcoat ar înflori
+  const key = new THREE.DirectionalLight('#dfe6f0', glb ? 0 : 1.5); // .glb: no "moon", clearcoat reflections would bloom
   key.position.set(600, 1200, 800);
   const rim = new THREE.DirectionalLight('#7f93b3', glb ? 0.45 : 1.1);
   rim.position.set(-900, 600, -1200);
   scene.add(key, rim);
-  // Asfalt ușor umed: luminile mașinii se reflectă în el
+  // Slightly wet asphalt: the car's lights reflect in it
   const ground = new THREE.Mesh(new THREE.CircleGeometry(4000, 64), new THREE.MeshStandardMaterial({ color: '#0b0c0e', roughness: 0.72, metalness: 0.15 }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.copy(center).setY(0);
@@ -224,7 +224,7 @@ export async function createScene3D(container, layout, vehicleKey) {
   const sprites = [];      // {s, get | rgb | closure}
   const emissive = [];     // {mat, keys, base}
   const parts = [];        // {pivot, apply, box}
-  const anchors = {};      // cheie lampă -> poziții, pentru luminile reale și fascicule
+  const anchors = {};      // lamp key -> positions, for real lights and beams
   const anchor = (keys, pos) => { for (const k of keys) (anchors[k] ||= []).push(pos.clone()); };
   let attribution = '';
 
@@ -240,7 +240,7 @@ export async function createScene3D(container, layout, vehicleKey) {
   if (pick.kind === 'official') {
     // ---- Mesh oficial Tesla ----
     const meshInfo = layout.meshes.find(m => m.name === pick.mesh);
-    if (!meshInfo) throw new Error('Lipsește proiectul oficial Tesla xLights (tesla_xlights_show_folder).');
+    if (!meshInfo) throw new Error('The official Tesla xLights project is missing (tesla_xlights_show_folder).');
     const [dir, objName] = meshInfo.obj.split('/');
     const base = `/tesla/${dir}/`;
     const materials = await new MTLLoader().setPath(base).loadAsync(objName.replace(/\.obj$/i, '.mtl'));
@@ -260,7 +260,7 @@ export async function createScene3D(container, layout, vehicleKey) {
     car.rotation.set(...meshInfo.rot.map(THREE.MathUtils.degToRad));
     scene.add(car);
 
-    // Piese mobile (doar Model S are piesele separate în OBJ)
+    // Moving parts (only Model S has separate parts in the OBJ)
     const byName = name => car.children.filter(c => c.name === name);
     const hinge = (names, pivotFn, apply) => {
       const meshes = names.flatMap(byName);
@@ -280,7 +280,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       hinge(['Door_LF_Mirror'], b => new THREE.Vector3(b.max.x, b.min.y, b.max.z), (p, c) => { p.rotation.y = deg(70) * (1 - c.mirrorL.pos); });
       hinge(['Door_RF_Mirror'], b => new THREE.Vector3(b.max.x, b.min.y, b.min.z), (p, c) => { p.rotation.y = deg(-70) * (1 - c.mirrorR.pos); });
       for (const [name, k] of [['Window_LF', 'winLF'], ['Window_LR', 'winLR'], ['Window_RF', 'winRF'], ['Window_RR', 'winRR']]) {
-        if (vehicleKey === 'mx' && (name === 'Window_LR' || name === 'Window_RR')) continue; // la X geamul spate merge cu ușa Falcon
+        if (vehicleKey === 'mx' && (name === 'Window_LR' || name === 'Window_RR')) continue; // on X the rear window moves with the Falcon Wing door
         hinge([name], b => b.min.clone(), (p, c, box) => { p.position.y = box.min.y - (box.max.y - box.min.y) * 0.95 * c[k].pos; });
       }
       hinge(['Charge_Cap'], b => new THREE.Vector3(b.min.x, b.min.y, (b.min.z + b.max.z) / 2), (p, c) => { p.rotation.y = deg(85) * c.chargePort.pos; });
@@ -300,7 +300,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       const size = m.type === 'Custom' ? 46 : isCT ? 26 : 20;
       if (LAMPS[name]) {
         const [k, color] = LAMPS[name];
-        const weight = k.startsWith('tail') ? 0.4 : 1; // stopul de poziție e mult mai slab decât frâna
+        const weight = k.startsWith('tail') ? 0.4 : 1; // tail lights are much dimmer than the brake
         nodes.forEach(p => sprites.push({ s: sprite(p, color, size), get: o => (o[k] || 0) * weight }));
         anchor([k], nodes[Math.floor(nodes.length / 2)]);
       } else if (BARS[name]) {
@@ -309,7 +309,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       } else if (RGB[name]) {
         nodes.forEach(p => sprites.push({ s: sprite(p, '#ffffff', 60), rgb: RGB[name] }));
       } else if (CLOSURE_KEYS[name] && isCT) {
-        // Cybertruck-ul oficial e o singură piesă: mișcările apar ca indicatori galbeni
+        // The official Cybertruck is one piece: moving parts show as yellow markers
         sprites.push({ s: sprite(nodes[0], CLOSURE, 34), closure: CLOSURE_KEYS[name] });
       }
     }
@@ -319,8 +319,8 @@ export async function createScene3D(container, layout, vehicleKey) {
     const extras = gltf.parser.json.asset?.extras || {};
     if (extras.title) attribution = `${extras.title}${extras.author ? ` de ${extras.author.replace(/\s*\(.*\)/, '')}` : ''}${extras.license ? `, ${extras.license.replace(/\s*\(.*\)/, '')}` : ''}`;
     const model = gltf.scene;
-    // Sticla și lacul perfect netede (rugozitate 0) reflectă luminile ca puncte extrem de intense, pe care
-    // bloom-ul le transformă în pătrate. O rugozitate minimă dă reflexii moi, ca pe o mașină reală.
+    // Perfectly smooth glass and clearcoat (roughness 0) reflect lights as extremely bright points, which
+    // bloom turns into squares. A minimum roughness gives soft reflections, like on a real car.
     model.traverse(o => {
       if (!o.isMesh) return;
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
@@ -329,7 +329,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       }
     });
     model.updateMatrixWorld(true);
-    // Orientare din roți: înainte = +X, stânga = -Z (ca la modelele oficiale)
+    // Orientation from the wheels: forward = +X, left = -Z (like the official models)
     const wp = n => model.getObjectByName(n)?.getWorldPosition(new THREE.Vector3());
     const rf = wp('hub_rf'), rb = wp('hub_rb'), lf = wp('hub_lf');
     const holder = new THREE.Group();
@@ -338,16 +338,16 @@ export async function createScene3D(container, layout, vehicleKey) {
     if (hubs) {
       const F = rf.clone().sub(rb).normalize(), Lf = lf.clone().sub(rf).normalize();
       const U = new THREE.Vector3().crossVectors(F, Lf).normalize();
-      Lf.crossVectors(U, F).normalize(); // re-ortogonalizat: stânga
+      Lf.crossVectors(U, F).normalize(); // re-orthogonalized: left
       const A = new THREE.Matrix4().makeBasis(F, U, Lf.clone().negate());
       holder.quaternion.setFromRotationMatrix(A.invert());
     } else {
-      // glTF e cu Y în sus; lungimea mașinii o punem pe X
+      // glTF is Y-up; put the car's length on X
       const s0 = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
       if (s0.z > s0.x) holder.rotation.y = Math.PI / 2;
     }
     scene.add(holder);
-    // Scară: lungimea unui Tesla (~4,7–5 m) la scara modelelor oficiale (~5 mm pe unitate), apoi centrare
+    // Scale: a Tesla is ~4.7–5 m long, at the official models' scale (~5 mm per unit), then center
     const fit = () => {
       holder.scale.setScalar(1);
       holder.position.set(0, 0, 0);
@@ -360,7 +360,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       holder.updateMatrixWorld(true);
     };
     fit();
-    // Fără roți numite: fața e partea spre care stau oglinzile (cele mai late puncte de deasupra roților)
+    // No named wheels: the front is where the mirrors are (widest points above the wheels)
     if (!hubs) {
       const m = mirrorTriangles(model);
       if (m.count && m.sumX / m.count < 0) { holder.rotation.y += Math.PI; fit(); }
@@ -374,16 +374,16 @@ export async function createScene3D(container, layout, vehicleKey) {
     model.traverse(o => { if (o.isMesh && !o.isSkinnedMesh) meshes.push(o); });
     const L = fsize.x, W = fsize.z, H = fsize.y;
 
-    // Lumini, varianta precisă: materiale numite pe lămpi (ex. Model 3 de Ameer Studio)
+    // Lights, precise version: materials named per lamp (e.g. the Model 3 by Ameer Studio)
     let precise = 0;
     for (const o of meshes) {
-      const name = o.material?.name || ''; // potrivire doar pe material: nodurile pot conține și rame negre
+      const name = o.material?.name || ''; // match on material only: nodes can also contain black trims
       const rule = GLB_LIGHTS.find(([re]) => re.test(name));
       if (!rule) continue;
       const [, color, keysFor, base = 1, w = {}] = rule;
       const pos = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
       const side = pos.z < 0 ? 'L' : 'R';
-      // Piesă centrală (ex. lampa de marșarier pe toată lățimea): ascultă de ambele părți
+      // Center piece (e.g. a full-width reverse light): follows both sides
       const keys = Math.abs(pos.z) < 40 ? [...new Set([...keysFor('L'), ...keysFor('R')])] : keysFor(side);
       const mat = o.material.clone();
       mat.emissive = new THREE.Color(color);
@@ -394,7 +394,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       precise++;
     }
 
-    // Lumini, varianta generică: materiale „light/lamp” împărțite pe triunghiuri în față/spate și stânga/centru/dreapta
+    // Lights, generic version: "light/lamp" materials split by triangle into front/rear and left/center/right
     if (!precise) {
       for (const o of meshes) {
         const name = o.material?.name || '';
@@ -419,7 +419,7 @@ export async function createScene3D(container, layout, vehicleKey) {
         o.visible = false;
       }
     }
-    // Model fără materiale de lumini (ex. Model X cu texturi): lămpi lipite pe caroserie, găsite cu raze
+    // Model without light materials (e.g. a textured Model X): lamps placed on the body with raycasts
     const ray = new THREE.Raycaster();
     const surface = (x, y, z, dirX) => {
       ray.set(new THREE.Vector3(x - dirX * L, y, z), new THREE.Vector3(dirX, 0, 0));
@@ -439,7 +439,7 @@ export async function createScene3D(container, layout, vehicleKey) {
         }
       }
     }
-    // Semnalizări portocalii la colțuri, dacă modelul nu le are ca material separat
+    // Amber turn signals at the corners, if the model doesn't have them as a separate material
     if (!precise) {
       for (const side of ['L', 'R']) {
         const zs = side === 'L' ? -1 : 1;
@@ -451,7 +451,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       }
     }
 
-    // Geamurile ușilor coboară în ușă (axa Z locală a ușii e în sus, unități de metri)
+    // Door windows drop into the door (the door's local Z axis is up, in meters)
     for (const [door, k] of [['door_lf', 'winLF'], ['door_lr', 'winLR'], ['door_rf', 'winRF'], ['door_rr', 'winRR']]) {
       model.getObjectByName(door)?.traverse(o => {
         if (!o.isMesh || !/^glass/.test(o.material?.name || '')) return;
@@ -460,8 +460,8 @@ export async function createScene3D(container, layout, vehicleKey) {
         animated.add(k);
       });
     }
-    // Oglinzile: decupate din caroserie (cele mai late puncte de deasupra roților) și pliate spre spate,
-    // în jurul axei verticale de la baza lor
+    // Mirrors: cut out of the body (widest points above the wheels) and folded backward,
+    // around the vertical axis at their base
     const mt = mirrorTriangles(model);
     for (const side of ['L', 'R']) {
       const k = `mirror${side}`, pieces = [];
@@ -479,7 +479,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       pivot.position.set((mb.min.x + mb.max.x) / 2, mb.min.y, side === 'L' ? mb.max.z : mb.min.z); // baza oglinzii
       pieces.forEach(m => { m.geometry.translate(-pivot.position.x, -pivot.position.y, -pivot.position.z); pivot.add(m); });
       scene.add(pivot);
-      // stânga (-Z): rotația pozitivă duce exteriorul spre -X (spate); dreapta invers
+      // left (-Z): positive rotation swings the outer end toward -X (rear); right is the opposite
       parts.push({ pivot, apply: (p, c) => { p.rotation.y = (side === 'L' ? 1 : -1) * 1.2 * (1 - c[k].pos); } });
       animated.add(k);
     }
@@ -492,11 +492,11 @@ export async function createScene3D(container, layout, vehicleKey) {
     // Portbagaj pe balamaua din model (boot_dummy la Model 3)
     const boot = model.getObjectByName('boot_dummy');
     if (boot) {
-      const rest = boot.quaternion.clone(), axis = new THREE.Vector3(1, 0, 0); // axa laterală în spațiul piesei
+      const rest = boot.quaternion.clone(), axis = new THREE.Vector3(1, 0, 0); // lateral axis in the part's space
       parts.push({ pivot: boot, apply: (p, c) => { p.quaternion.copy(rest).multiply(new THREE.Quaternion().setFromAxisAngle(axis, -1.1 * c.liftgate.pos)); } });
       animated.add('liftgate');
     }
-    // Ce nu există ca piesă separată apare ca indicator mic, pe caroserie
+    // Anything that isn't a separate part shows as a small marker on the body
     const at = (fx, fy, fz) => new THREE.Vector3(final.min.x + fsize.x * fx, final.min.y + fsize.y * fy, final.min.z + fsize.z * fz);
     for (const [k, p] of [['mirrorL', at(0.64, 0.62, 0.02)], ['mirrorR', at(0.64, 0.62, 0.98)], ['chargePort', at(0.1, 0.62, 0.03)],
       ['liftgate', at(0.04, 0.72, 0.5)], ['winLF', at(0.55, 0.78, 0.08)], ['winLR', at(0.4, 0.78, 0.08)],
@@ -505,7 +505,7 @@ export async function createScene3D(container, layout, vehicleKey) {
     }
   }
 
-  // ---- Lumini reale: luminează caroseria și asfaltul, plus fasciculele farurilor ----
+  // ---- Real lights: light up the body and the asphalt, plus headlight beams ----
   const avg = list => list.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(Math.max(1, list.length));
   const at = keys => { const pts = keys.flatMap(k => anchors[k] || []); return pts.length ? avg(pts) : null; };
   const rig = [];
@@ -529,7 +529,7 @@ export async function createScene3D(container, layout, vehicleKey) {
     }
     for (const [keys, pos, dx] of [[[`fturn${side}`], at([`fturn${side}`]), 40], [[`rturn${side}`, `rep${side}`, `rsm${side}`], at([`rturn${side}`]), -40]]) {
       if (!pos) continue;
-      // sub nivelul geamurilor și puțin în afara mașinii, ca să nu se reflecte în parbriz/lunetă
+      // below the windows and slightly outside the car, so it doesn't reflect in the glass
       const l = new THREE.PointLight(AMBER, 0, 380, 0);
       l.position.copy(pos).add(new THREE.Vector3(dx * 2, -45, side === 'L' ? -30 : 30));
       scene.add(l);
@@ -555,7 +555,7 @@ export async function createScene3D(container, layout, vehicleKey) {
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  // .glb: prag mare, ca reflexiile de pe parbriz/capotă să nu „înflorească”; doar lămpile emisive trec
+  // .glb: high threshold so glass/hood reflections don't bloom; only emissive lamps pass
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), glb ? 0.9 : 1.15, glb ? 0.75 : 0.55, glb ? 1.0 : 0.12));
   composer.addPass(new OutputPass());
 
@@ -571,7 +571,7 @@ export async function createScene3D(container, layout, vehicleKey) {
   ro.observe(container);
   resize();
 
-  // Unghiuri de cameră (fața mașinii e spre +X, partea stângă spre -Z)
+  // Camera angles (the car's front faces +X, its left side -Z)
   const dist = isCT ? 2300 : 1700;
   const PRESETS = { three: [1250, 420, 1080], front: [dist, 260, 0], side: [0, 300, -dist], rear: [-dist, 320, 0], top: [40, dist * 1.25, 0] };
   let tween = null;
@@ -579,7 +579,7 @@ export async function createScene3D(container, layout, vehicleKey) {
     controls.autoRotate = name === 'orbit';
     controls.autoRotateSpeed = 1.2;
     if (name === 'orbit') return;
-    const fit = Math.max(1, 1.5 / camera.aspect); // panou îngust (2D + 3D): camera se depărtează
+    const fit = Math.max(1, 1.5 / camera.aspect); // narrow panel (2D + 3D): the camera backs off
     const off = PRESETS[name].map(v => v * fit * (isCT ? 1.35 : 1));
     const to = center.clone().add(new THREE.Vector3(...off));
     if (instant) { camera.position.copy(to); return; }

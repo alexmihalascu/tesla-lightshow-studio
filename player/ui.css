@@ -116,7 +116,7 @@ svg .fill, svg.fill { fill: currentColor; stroke: none; }
 .cam-bar button[aria-pressed="true"] { background: var(--active); color: var(--text); }
 .view-note { position: absolute; right: 16px; top: 14px; z-index: 2; margin: 0; color: var(--faint); font-size: 12px; max-width: 46%; text-align: right; }
 
-/* ---------- Mod prezentare ---------- */
+/* ---------- Presentation mode ---------- */
 .present-info { display: none; }
 .app.present { grid-template-columns: 1fr; }
 .app.present .sidebar, .app.present .topbar, .app.present .dock, .app.present .inspector,
@@ -146,7 +146,7 @@ svg .fill, svg.fill { fill: currentColor; stroke: none; }
 .card-p:hover .play-fab, .card-p:focus-visible .play-fab { opacity: 1; }
 .card-p .play-fab svg { width: 13px; height: 13px; }
 
-/* ---------- Stare goală + composer ---------- */
+/* ---------- Empty state + composer ---------- */
 .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; gap: 4px; }
 .empty.home { justify-content: flex-start; padding-top: 12vh; padding-bottom: 48px; }
 .empty h1 { font-size: 32px; font-weight: 500; letter-spacing: -.01em; margin: 0; }
@@ -186,7 +186,7 @@ svg .fill, svg.fill { fill: currentColor; stroke: none; }
 .track canvas { display: block; width: 100%; height: 100%; }
 .playhead { position: absolute; top: 0; bottom: 0; width: 2px; left: 0; background: var(--text); pointer-events: none; box-shadow: 0 0 10px rgba(255,255,255,.6); }
 
-/* ---------- Inspector compatibilitate ---------- */
+/* ---------- Compatibility inspector ---------- */
 .inspector { width: 300px; border-left: 1px solid var(--line); background: var(--side); padding: 16px; overflow-y: auto; }
 .inspector h2 { font-size: 15px; font-weight: 600; margin: 0; }
 .muted { color: var(--muted); }

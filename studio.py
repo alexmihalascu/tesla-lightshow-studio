@@ -1,5 +1,5 @@
-"""Tesla Light Show Studio — server local: bibliotecă de show-uri, player, generator, copiere pe stick.
-Pornire: python studio.py   (apoi http://127.0.0.1:8642)
+"""Tesla Light Show Studio — local server: show library, player, generator, copy to USB drive.
+Run: python studio.py   (then open http://127.0.0.1:8642)
 """
 import json, os, re, shutil, string, struct, sys, tempfile, threading, webbrowser
 import xml.etree.ElementTree as ET
@@ -10,11 +10,11 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parent
 SHOWS = ROOT / "shows"
 PORT = 8642
-# Proiectul oficial Tesla xLights (modele 3D + poziții lumini). Nu e redistribuit în repo: se citește local.
+# Official Tesla xLights project (3D models + light positions). Not redistributed: read from disk.
 TESLA_CANDIDATES = [os.environ.get("TESLA_XLIGHTS_DIR", ""), ROOT / "tesla_xlights_show_folder",
                     Path.home() / "Downloads" / "tesla_xlights_show_folder"]
 TESLA_FILES = (".obj", ".mtl", ".png", ".jpg")
-MODELS_DIR = ROOT / "models"  # modele 3D proprii (.glb), nu intră în git
+MODELS_DIR = ROOT / "models"  # your own 3D models (.glb), not in git
 AUDIO = (".wav", ".mp3")
 NAME_RE = re.compile(r"^[\w\- ]{1,60}$")
 CLOSURES = {"mirrors": (34, 20), "windows": (36, 6), "liftgate": (40, 6), "chargePort": (45, 3)}
@@ -22,7 +22,7 @@ _stats_cache = {}
 
 
 def usb_dir():
-    """Stickul Tesla = primul drive (D:..Z:) care are LightShow/ sau TeslaCam/."""
+    """The Tesla drive = first drive (D:..Z:) with a LightShow/ or TeslaCam/ folder."""
     for letter in string.ascii_uppercase[3:]:
         root = Path(f"{letter}:/")
         try:
@@ -41,8 +41,8 @@ def tesla_dir():
 
 
 def tesla_layout():
-    """Modelele de lumini/închideri și mesh-urile 3D din xlights_rgbeffects.xml (coordonate xLights, Y în sus),
-    plus modelele 3D proprii din models/*.glb (ex. model3.glb, modely.glb)."""
+    """Light/closure models and 3D meshes from xlights_rgbeffects.xml (xLights coordinates, Y up),
+    plus your own 3D models in models/*.glb (e.g. model3.glb, modely.glb)."""
     custom = sorted(p.stem for p in MODELS_DIR.glob("*.glb"))
     folder = tesla_dir()
     if not folder:
@@ -70,7 +70,7 @@ def tesla_layout():
     for v in root.iter("view_object"):
         if v.get("DisplayAs") != "Mesh" or not v.get("ObjFile"):
             continue
-        parts = Path(v.get("ObjFile").replace("\\", "/")).parts[-2:]  # ex. Model_S/ModelS.obj
+        parts = Path(v.get("ObjFile").replace("\\", "/")).parts[-2:]  # e.g. Model_S/ModelS.obj
         meshes.append({"name": v.get("name"), "obj": "/".join(parts),
                        "pos": [num(v, "WorldPosX"), num(v, "WorldPosY"), num(v, "WorldPosZ")],
                        "scale": [num(v, "ScaleX", 1), num(v, "ScaleY", 1), num(v, "ScaleZ", 1)],
@@ -79,7 +79,7 @@ def tesla_layout():
 
 
 def fseq_stats(path):
-    """Durată, lumini folosite și comenzi de închideri (Open/Dance/Close) dintr-un .fseq v2 necomprimat."""
+    """Duration, lights used and closure commands (Open/Dance/Close) from an uncompressed .fseq v2."""
     key = (str(path), path.stat().st_mtime)
     if key in _stats_cache:
         return _stats_cache[key]
@@ -91,7 +91,7 @@ def fseq_stats(path):
     if not compressed:
         data = b[off:off + ch * frames]
         stats["lights"] = sum(max(data[c::ch], default=0) > 127 for c in range(30))
-        # Amprenta pentru cardurile de proiect: 96 de intervale, cât din lumini e aprins / dacă se mișcă ceva
+        # Fingerprint for project cards: 96 buckets, how many lights are on / whether anything moves
         buckets = 96
         lit, moving = [0] * buckets, [0] * buckets
         for c in range(30):
@@ -159,17 +159,17 @@ class Handler(SimpleHTTPRequestHandler):
             usb = usb_dir()
             return self.send_json({"local": list_shows(SHOWS, "local"), "usb": list_shows(usb, "usb"),
                                    "usbDrive": str(usb.parent)[:2] if usb else None,
-                                   # Tesla: stickul NU trebuie să aibă TeslaCam în rădăcină, altfel show-urile nu apar
+                                   # Tesla: the drive must NOT have TeslaCam at its root, or shows won't be listed
                                    "usbHasTeslaCam": bool(usb and (usb.parent / "TeslaCam").is_dir())})
         if path == "/api/layout":
             layout = tesla_layout()
-            return self.send_json(layout or {"error": "Nu găsesc proiectul Tesla xLights (tesla_xlights_show_folder)."},
+            return self.send_json(layout or {"error": "Can't find the Tesla xLights project (tesla_xlights_show_folder)."},
                                   200 if layout else 404)
         m = re.fullmatch(r"/models/([\w\-]+\.glb)", path)
         if m:
             target = MODELS_DIR / m[1]
             if not target.is_file():
-                return self.send_json({"error": "Modelul 3D nu există."}, 404)
+                return self.send_json({"error": "3D model not found."}, 404)
             self.send_response(200)
             self.send_header("Content-Type", "model/gltf-binary")
             self.send_header("Content-Length", str(target.stat().st_size))
@@ -184,7 +184,7 @@ class Handler(SimpleHTTPRequestHandler):
             target = (folder / rel).resolve() if folder else None
             if not target or folder.resolve() not in target.parents or target.suffix.lower() not in TESLA_FILES \
                     or not target.is_file():
-                return self.send_json({"error": "Fișierul nu există."}, 404)
+                return self.send_json({"error": "File not found."}, 404)
             self.send_response(200)
             self.send_header("Content-Type", "image/png" if target.suffix.lower() == ".png" else
                              "image/jpeg" if target.suffix.lower() == ".jpg" else "text/plain")
@@ -200,7 +200,7 @@ class Handler(SimpleHTTPRequestHandler):
             target = folder / fname if folder else None
             if not target or Path(fname).suffix not in (".fseq", *AUDIO) or not NAME_RE.match(Path(fname).stem) \
                     or not target.is_file():
-                return self.send_json({"error": "Fișierul nu există."}, 404)
+                return self.send_json({"error": "File not found."}, 404)
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(target.stat().st_size))
@@ -216,9 +216,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/generate":
             name = unquote(self.headers.get("X-Name", "")).strip()
             if not NAME_RE.match(name):
-                return self.send_json({"error": "Numele poate avea doar litere, cifre, spații și cratime."}, 400)
+                return self.send_json({"error": "Names can only contain letters, digits, spaces and dashes."}, 400)
             if (SHOWS / f"{name}.fseq").exists():
-                return self.send_json({"error": f"Există deja un show numit „{name}”. Alege alt nume."}, 409)
+                return self.send_json({"error": f"A show named \"{name}\" already exists. Pick another name."}, 409)
             suffix = Path(unquote(self.headers.get("X-Filename", "x.mp3"))).suffix or ".mp3"
             with tempfile.TemporaryDirectory() as tmp:
                 src = Path(tmp) / f"source{suffix}"
@@ -236,29 +236,29 @@ class Handler(SimpleHTTPRequestHandler):
                     _data, bpm, nbeats, _dance = make_show.generate(src, SHOWS, name,
                                                                      self.headers.get("X-Max") == "1",
                                                                      self.headers.get("X-Model", "m3"))
-                except Exception as e:  # noqa: BLE001 — orice eroare a generatorului ajunge în UI
-                    return self.send_json({"error": f"Generarea a eșuat: {e}"}, 500)
+                except Exception as e:  # noqa: BLE001 — any generator error is shown in the UI
+                    return self.send_json({"error": f"Generation failed: {e}"}, 500)
             return self.send_json({"name": name, "bpm": round(bpm), "beats": nbeats})
         if path == "/api/copy-to-usb":
             name = json.loads(self.rfile.read(length) or b"{}").get("name", "")
             usb = usb_dir()
             if not usb:
-                return self.send_json({"error": "Nu găsesc stickul Tesla. Conectează-l și încearcă din nou."}, 404)
+                return self.send_json({"error": "Can't find the Tesla drive. Plug it in and try again."}, 404)
             fseq, audio = show_files(SHOWS, name)
             if not NAME_RE.match(name) or not fseq.exists() or not audio:
-                return self.send_json({"error": "Show-ul nu există în bibliotecă."}, 404)
+                return self.send_json({"error": "That show isn't in the library."}, 404)
             need = fseq.stat().st_size + audio.stat().st_size
             if shutil.disk_usage(usb.parent).free < need:
-                return self.send_json({"error": "Nu e destul spațiu liber pe stick."}, 507)
+                return self.send_json({"error": "Not enough free space on the drive."}, 507)
             usb.mkdir(exist_ok=True)
-            for other in AUDIO:  # un singur fișier audio per show, altfel mașina poate alege greșit
+            for other in AUDIO:  # one audio file per show, otherwise the car may pick the wrong one
                 (usb / f"{name}{other}").unlink(missing_ok=True)
             for f in (fseq, audio):
                 shutil.copyfile(f, usb / f.name)
                 if (usb / f.name).stat().st_size != f.stat().st_size:
-                    return self.send_json({"error": f"Copierea lui {f.name} nu s-a terminat corect."}, 500)
+                    return self.send_json({"error": f"Copying {f.name} didn't finish correctly."}, 500)
             return self.send_json({"copied": name, "drive": str(usb.parent)[:2]})
-        return self.send_json({"error": "Rută necunoscută."}, 404)
+        return self.send_json({"error": "Unknown route."}, 404)
 
 
 if __name__ == "__main__":
@@ -266,7 +266,7 @@ if __name__ == "__main__":
     SHOWS.mkdir(exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://127.0.0.1:{PORT}"
-    print(f"Tesla Light Show Studio rulează la {url}  (Ctrl+C pentru oprire)")
+    print(f"Tesla Light Show Studio running at {url}  (Ctrl+C to stop)")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.5, webbrowser.open, [url]).start()
     try:

@@ -1,67 +1,67 @@
 # Light Show Studio
 
-Studio local pentru Tesla Light Show: transformă o melodie într-un show, îl previzualizează pe mașina ta (2D și 3D, cu modelele oficiale Tesla) și îl copiază pe stick.
+A local studio for Tesla Light Shows: turn a song into a show, preview it on your car (2D and 3D), and copy it to your USB drive.
 
-- **Generator**: analizează melodia (tempo, beat-uri, bas, refrene) și scrie un `.fseq` v2 necomprimat, validat după limitele oficiale Tesla.
-- **Emulator pe model**: Model 3, Model 3 (până în oct. 2020), Model Y, Model S, Model X și Cybertruck, plus regiunea (Europa sau America de Nord) și tipul de faruri. Aplică regulile din documentația oficială: canalele 4–6 combinate pe 3/Y, lumini de poziție combinate, remaparea Cybertruck, ce închideri are fiecare model.
-- **Player**: vederi 2D (lateral, față, spate), 3D cu modelele oficiale (piesele Model S se mișcă: portbagaj, oglinzi, geamuri, trapă, uși Falcon emulate) sau ambele. Include timeline-ul show-ului și unghiuri de cameră.
-- **Proiecte**: biblioteca de pe calculator și de pe stick, cu amprenta de activitate a fiecărui show.
-- **Documentație**: harta canalelor, ramp-uri, închideri și particularitățile fiecărui model, pe `/docs.html`.
+- **Generator**: analyzes the song (tempo, beats, bars, kick/snare/hi-hat, sections) and writes an uncompressed `.fseq` v2 that respects Tesla's official limits. Quiet parts "breathe", verses pulse, build-ups chase left to right, choruses sweep the headlights like a matrix.
+- **Per-model emulator**: Model 3, Model 3 (before Oct 2020), Model Y, Model Y Juniper, Model S, Model X and Cybertruck, plus region (Europe or North America) and headlight type. It applies the rules from Tesla's docs: combined channels 4–6 on 3/Y, combined park lights, Cybertruck remapping, which closures each model has.
+- **Player**: 2D (side, front, rear), 3D, or both side by side, with camera angles, a channel timeline and a sync offset for Bluetooth/speaker latency.
+- **Projects**: shows on your computer and on the drive, with an activity fingerprint and a live hover preview on every card. Presentation mode plays them back to back, full screen.
+- **Docs**: channel map, ramps, closures and per-model details at `/docs.html`.
 
-## Pornire
+## Running
 
-Cerințe: Python 3.10+, [ffmpeg](https://ffmpeg.org/) în PATH.
+Requires Python 3.10+ and [ffmpeg](https://ffmpeg.org/) on your PATH.
 
 ```sh
 pip install -r requirements.txt
 python studio.py
 ```
 
-Se deschide `http://127.0.0.1:8642`. Serverul ascultă doar local.
+Opens `http://127.0.0.1:8642`. The server only listens locally.
 
-### Modelele 3D oficiale
+### Official 3D models
 
-Vederea 3D folosește proiectul oficial Tesla pentru xLights, care **nu** e inclus în acest repo. Descarcă [teslamotors/light-show](https://github.com/teslamotors/light-show), dezarhivează `xlights/tesla_xlights_show_folder.zip` și pune folderul `tesla_xlights_show_folder` într-unul dintre aceste locuri:
+The 3D view uses Tesla's official xLights project, which is **not** included here. Download [teslamotors/light-show](https://github.com/teslamotors/light-show), unzip `xlights/tesla_xlights_show_folder.zip` and put the `tesla_xlights_show_folder` folder in one of these places:
 
-- lângă `studio.py`
-- în `~/Downloads`
-- oriunde, cu variabila de mediu `TESLA_XLIGHTS_DIR`
+- next to `studio.py`
+- in `~/Downloads`
+- anywhere, with the `TESLA_XLIGHTS_DIR` environment variable
 
-Tesla oferă oficial doar Model S și Cybertruck în 3D.
+Tesla only ships Model S and Cybertruck in 3D.
 
-### Modele 3D proprii (Model 3, Y, Y Juniper, X)
+### Your own 3D models (Model 3, Y, Y Juniper, X)
 
-Pune fișiere `.glb` (de exemplu de pe Sketchfab, cu licență Creative Commons) în folderul `models/`, care nu intră în git:
+Put `.glb` files (for example from Sketchfab, under a Creative Commons license) in the `models/` folder, which is ignored by git:
 
-| Fișier | Folosit pentru |
+| File | Used for |
 |---|---|
 | `models/model3.glb` | Model 3 |
 | `models/modely.glb` | Model Y (2020–2024) |
 | `models/modely-juniper.glb` | Model Y Juniper (2025+) |
 | `models/modelx.glb` | Model X |
 
-Studio orientează și scalează automat modelul, găsește lămpile după numele materialelor (sau le împarte pe față/spate și stânga/dreapta), decupează oglinzile și le pliază, iar unde modelul nu are piese separate (geamuri, portbagaj) folosește indicatori. Numele autorului și licența din fișier apar în vederea 3D, cum cer licențele CC-BY.
+Studio orients and scales the model automatically, finds the lamps by material name (or splits them into front/rear and left/right), cuts out the mirrors and folds them, and shows markers for parts the model doesn't have separately (windows, liftgate). The author and license stored in the file are shown in the 3D view, as CC-BY requires.
 
-## Generator din linia de comandă
+## Command-line generator
 
 ```sh
-python generator/make_show.py melodie.mp3 --max --model m3 --out LightShow --name show1
+python generator/make_show.py song.mp3 --max --model m3 --out LightShow --name show1
 ```
 
-- `--max`: geamuri care dansează, plus portbagaj (Y, S, X, Cybertruck) și mânere (S)
-- `--model`: `m3`, `my`, `ms`, `mx` sau `ct`
-- scrie `show1.fseq`, `show1.wav` (44,1 kHz) și `show1.xsq` pentru xLights
+- `--max`: windows dance, plus the liftgate (Y, S, X, Cybertruck) and door handles (S)
+- `--model`: `m3`, `my`, `ms`, `mx` or `ct`
+- writes `show1.fseq`, `show1.wav` (44.1 kHz) and `show1.xsq` for xLights
 
-Ușile (inclusiv Falcon) nu sunt comandate niciodată: pe Model X, mișcarea geamurilor în timpul mișcării ușilor poate declanșa protecția anti-prindere.
+Doors (including Falcon Wing) are never commanded: on Model X, moving windows while the doors move can trigger pinch protection and stop the show.
 
-## Stickul USB
+## USB drive
 
-Tesla citește show-urile din folderul `LightShow` din rădăcina unui stick exFAT sau FAT32. Stickul **nu** trebuie să conțină folderul `TeslaCam`; Studio te avertizează dacă îl găsește, dar nu șterge nimic.
+Tesla reads shows from a `LightShow` folder at the root of an exFAT or FAT32 drive. The drive must **not** have a `TeslaCam` folder; Studio warns you if it finds one, but never deletes anything.
 
-## Verificare
+## Check
 
 ```sh
 python test_studio.py
 ```
 
-Show-urile tale stau în `shows/` (ignorat de git).
+Your shows live in `shows/` (ignored by git).

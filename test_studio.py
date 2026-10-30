@@ -1,4 +1,4 @@
-"""Verificare rapidă: python test_studio.py (fără framework)."""
+"""Quick check: python test_studio.py (no framework)."""
 import sys
 import tempfile
 from pathlib import Path
@@ -14,7 +14,7 @@ import studio  # noqa: E402
 def test_fseq_roundtrip_and_stats():
     frames = 500
     data = np.zeros((frames, 48), np.uint8)
-    data[10:20, 0] = 255                       # faza lungă stânga aprinsă
+    data[10:20, 0] = 255                       # left outer main beam on
     data[50:60, make_show.L_MIRROR] = make_show.C_CLOSE
     data[200:210, make_show.L_MIRROR] = make_show.C_OPEN
     data[300:400, make_show.CHARGE_PORT] = make_show.C_DANCE
@@ -22,7 +22,7 @@ def test_fseq_roundtrip_and_stats():
         path = Path(tmp) / "t.fseq"
         make_show.write_fseq(path, data)
         raw = path.read_bytes()
-        assert raw[:4] == b"PSEQ" and raw[6:8] == b"\x00\x02" and raw[20] == 0  # v2.0, necomprimat
+        assert raw[:4] == b"PSEQ" and raw[6:8] == b"\x00\x02" and raw[20] == 0  # v2.0, uncompressed
         stats = studio.fseq_stats(path)
     assert stats["duration"] == frames * make_show.STEP_MS / 1000
     assert stats["lights"] == 1
@@ -32,7 +32,7 @@ def test_fseq_roundtrip_and_stats():
 
 def test_closure_command_counting():
     col = np.array([0, 64, 64, 0, 128, 128, 192, 0, 255, 0], np.uint8)  # Open, Dance, Close, Stop
-    assert make_show.closure_commands(col) == 3  # Stop nu contează la limită
+    assert make_show.closure_commands(col) == 3  # Stop doesn't count toward the limit
 
 
 def test_name_validation():

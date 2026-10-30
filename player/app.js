@@ -21,12 +21,12 @@ if (!VEHICLES[cfg.vehicle]) cfg.vehicle = 'm3';
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// ---------- Stare ----------
+// ---------- State ----------
 let library = { local: [], usb: [] }, current = null, seq = null, objectUrl = null;
 let emu = createEmulator(cfg), scene2d = null, scene3d = null, view = store.get('view', '2d'), layout = null;
 let snapNext = true, last = performance.now();
 
-// ---------- Meniuri (popover) ----------
+// ---------- Menus (popover) ----------
 const MENUS = {
   vehicle: () => ({ search: true, items: Object.entries(VEHICLES).map(([k, v], i) => ({ k, title: v.name, hint: v.hint, kbd: `Ctrl+${i + 1}` })), value: cfg.vehicle, set: k => setCfg('vehicle', k) }),
   region: () => ({ items: Object.entries(REGIONS).map(([k, v]) => ({ k, title: v.name, hint: v.hint })), value: cfg.region, set: k => setCfg('region', k) }),
@@ -224,7 +224,7 @@ $('#track').addEventListener('pointerdown', e => { dragging = true; $('#track').
 $('#track').addEventListener('pointermove', e => dragging && seek(e));
 $('#track').addEventListener('pointerup', () => { dragging = false; });
 
-// ---------- Redare ----------
+// ---------- Playback ----------
 const frameView = i => seq.data.subarray(seq.off + i * seq.ch, seq.off + (i + 1) * seq.ch);
 const frameAt = t => Math.min(seq.frames - 1, Math.max(0, Math.floor(t * 1000 / seq.step)));
 audio.addEventListener('seeked', () => { snapNext = true; });
@@ -266,7 +266,7 @@ const metaOf = s => s.lights == null ? 'compressed show' : [`${s.lights} lights`
 let lastLibrary = '';
 async function refresh() {
   const text = await (await fetch('/api/shows')).text();
-  if (text === lastLibrary) return; // nimic nou (verificat periodic pentru stick)
+  if (text === lastLibrary) return; // nothing new (polled for the USB drive)
   lastLibrary = text;
   library = JSON.parse(text);
   renderLibrary();
@@ -515,7 +515,7 @@ function showEmpty() {
 }
 ['#newBtn', '#newBtn2'].forEach(id => $(id).addEventListener('click', () => { showEmpty(); $('#pickBtn')?.focus(); }));
 
-// ---------- Compatibilitate ----------
+// ---------- Compatibility ----------
 function renderCompat() {
   const v = VEHICLES[cfg.vehicle];
   $('#compatTitle').textContent = `On ${v.name}`;
@@ -534,7 +534,7 @@ $('#compatBtn').addEventListener('click', () => {
   requestAnimationFrame(drawTimeline);
 });
 
-// ---------- Show nou ----------
+// ---------- New show ----------
 const song = $('#song');
 let picked = null;
 function setPicked(file) {
@@ -593,7 +593,7 @@ $('#newForm').addEventListener('submit', async e => {
   }
 });
 
-// ---------- Copiere pe stick ----------
+// ---------- Copy to drive ----------
 $('#copyBtn').addEventListener('click', async () => {
   const btn = $('#copyBtn');
   btn.disabled = true;
@@ -604,7 +604,7 @@ $('#copyBtn').addEventListener('click', async () => {
   await refresh();
 });
 
-// ---------- Mod prezentare ----------
+// ---------- Presentation mode ----------
 let presenting = false, viewBefore = view, presentList = [], presentIdx = 0;
 function playPresent() {
   const s = presentList[presentIdx % presentList.length];
@@ -613,7 +613,7 @@ function playPresent() {
   openShow(s.source, s.name, true);
 }
 function startPresentation() {
-  // Show-urile de pe calculator, apoi cele doar de pe stick
+  // Shows on the computer first, then the ones only on the drive
   const local = new Set(library.local.map(s => s.name));
   presentList = [...library.local, ...library.usb.filter(s => !local.has(s.name))].filter(s => !s.compressed);
   if (!presentList.length) return;
@@ -668,7 +668,7 @@ const setCollapsed = c => { $('#app').classList.toggle('collapsed', c); store.se
 $('#collapseBtn').addEventListener('click', () => setCollapsed(true));
 $('#expandBtn').addEventListener('click', () => setCollapsed(false));
 
-// ---------- Pornire ----------
+// ---------- Startup ----------
 labelChips();
 setCrumbs();
 setCollapsed(store.get('collapsed', '0') === '1');

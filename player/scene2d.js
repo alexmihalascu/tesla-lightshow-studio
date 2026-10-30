@@ -1,4 +1,4 @@
-// Scenă 2D: lateral (stânga mașinii), față și spate, desenate per model. Lămpile au data-lamp = chei din emulator.
+// 2D scene: side (left of the car), front and rear, drawn per model. Lamps use data-lamp = emulator keys.
 const SIDE = {
   model3: {
     body: 'M78 238 C66 228 64 206 76 196 C92 186 140 176 210 168 C260 162 300 158 330 152 C380 120 430 98 490 92 C560 86 640 92 700 120 C740 138 780 146 812 152 C828 156 834 176 830 204 L824 238 L706 238 A56 56 0 0 0 594 238 L271 238 A56 56 0 0 0 159 238 Z',
@@ -98,7 +98,7 @@ function sideSvg(s) {
       <rect class="glass" data-closure="${id === 'FW' ? 'winLF' : 'winLR'}" x="300" y="60" width="420" height="110" fill="url(#glass)"/>
     </g>`;
   const rearWindow = win('RW', s.rw, 'lr');
-  return `<svg class="v-side" viewBox="-130 40 1040 280" role="img" aria-label="Mașina din lateral">
+  return `<svg class="v-side" viewBox="-130 40 1040 280" role="img" aria-label="Car, side view">
     ${DEFS}
     <rect x="-130" y="292" width="1040" height="40" fill="url(#ground)"/>
     <ellipse cx="450" cy="294" rx="400" ry="12" fill="#000" opacity=".7"/>
@@ -134,11 +134,11 @@ function sideSvg(s) {
   </svg>`;
 }
 
-// Jumătatea stângă a imaginii, oglindită în JS cu cheile pereche (data-mlamp)
+// Left half of the image, mirrored in JS with the paired keys (data-mlamp)
 function frontSvg(ct) {
   if (ct) {
     const leds = Array.from({ length: 60 }, (_, i) => `<rect class="bar" data-bar="front" data-i="${59 - i}" x="${56 + i * 5.8}" y="166" width="4.6" height="5" fill="#f4f8ff" opacity="0"/>`).join('');
-    return `<svg class="v-front" viewBox="0 40 460 250" role="img" aria-label="Mașina din față">
+    return `<svg class="v-front" viewBox="0 40 460 250" role="img" aria-label="Car, front view">
       <rect x="0" y="262" width="460" height="28" fill="url(#ground)"/>
       <ellipse class="lamp" data-lamp="outerL,outerR,innerL,innerR" data-base="1" cx="230" cy="272" rx="210" ry="16" fill="url(#poolW)" opacity="0"/>
       <rect x="70" y="212" width="40" height="56" rx="6" fill="#0a0b0d"/><rect x="350" y="212" width="40" height="56" rx="6" fill="#0a0b0d"/>
@@ -157,7 +157,7 @@ function frontSvg(ct) {
       </g>
     </svg>`;
   }
-  return `<svg class="v-front" viewBox="0 40 460 250" role="img" aria-label="Mașina din față">
+  return `<svg class="v-front" viewBox="0 40 460 250" role="img" aria-label="Car, front view">
     <rect x="0" y="262" width="460" height="28" fill="url(#ground)"/>
     <ellipse cx="230" cy="266" rx="200" ry="10" fill="#000" opacity=".7"/>
     <ellipse class="lamp" data-lamp="outerL,outerR,innerL,innerR" data-base="1" cx="230" cy="272" rx="210" ry="16" fill="url(#poolW)" opacity="0"/>
@@ -185,7 +185,7 @@ function frontSvg(ct) {
 function rearSvg(ct) {
   if (ct) {
     const leds = Array.from({ length: 52 }, (_, i) => `<rect class="bar" data-bar="rear" data-i="${i}" x="${60 + i * 6.6}" y="160" width="5.2" height="6" fill="#ff2b2b" opacity="0"/>`).join('');
-    return `<svg class="v-rear" viewBox="0 40 460 250" role="img" aria-label="Mașina din spate">
+    return `<svg class="v-rear" viewBox="0 40 460 250" role="img" aria-label="Car, rear view">
       <rect x="0" y="262" width="460" height="28" fill="url(#ground)"/>
       <ellipse class="lamp" data-lamp="brake" data-base="1" cx="230" cy="272" rx="210" ry="16" fill="url(#poolR)" opacity="0"/>
       <ellipse class="lamp" data-lamp="reverseL,reverseR,bed" data-base="1" cx="230" cy="274" rx="140" ry="10" fill="url(#poolW)" opacity="0"/>
@@ -202,7 +202,7 @@ function rearSvg(ct) {
       </g>
     </svg>`;
   }
-  return `<svg class="v-rear" viewBox="0 40 460 250" role="img" aria-label="Mașina din spate">
+  return `<svg class="v-rear" viewBox="0 40 460 250" role="img" aria-label="Car, rear view">
     <rect x="0" y="262" width="460" height="28" fill="url(#ground)"/>
     <ellipse cx="230" cy="266" rx="200" ry="10" fill="#000" opacity=".7"/>
     <ellipse class="lamp" data-lamp="brake,tailL,tailR" data-base="1" cx="230" cy="272" rx="210" ry="16" fill="url(#poolR)" opacity="0"/>
@@ -266,7 +266,7 @@ export function createScene2D(container, vehicleKey) {
       }
       const cl = out.closures;
       for (const m of mirrors) {
-        const p = 1 - cl[m.dataset.closure].pos, [px, py] = m.dataset.pivot.split(',').map(Number); // cât e pliată
+        const p = 1 - cl[m.dataset.closure].pos, [px, py] = m.dataset.pivot.split(',').map(Number); // how folded
         m.setAttribute('transform', m.dataset.mode === 'side'
           ? `rotate(${-28 * p} ${px} ${py}) translate(${6 * p} 0)`
           : `translate(${px} 0) scale(${1 - 0.7 * p} 1) translate(${-px} 0)`);
