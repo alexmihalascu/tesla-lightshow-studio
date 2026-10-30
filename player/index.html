@@ -56,6 +56,7 @@
       <button class="icon-btn only-collapsed" id="expandBtn" aria-label="Arată bara laterală"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2.5"/><path d="M8 4v12"/></svg></button>
       <nav class="crumbs" aria-label="Locație" id="crumbs"></nav>
       <div class="top-actions">
+        <button class="text-btn" id="presentBtn" title="Ecran complet, show-urile rulează unul după altul"><svg viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="10" rx="1.5"/><path d="M7 17h6M8.5 7.5l3.5 1.5-3.5 1.5z"/></svg><span>Prezentare</span></button>
         <button class="text-btn" id="copyBtn" hidden><svg viewBox="0 0 20 20"><path d="M10 13V4M6 8l4-4 4 4"/><path d="M4 13v2.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V13"/></svg><span>Copiază pe stick</span></button>
         <div class="seg" role="group" aria-label="Vizualizare">
           <button class="seg-btn" data-view="2d" aria-pressed="true" title="Desen 2D: lateral, față, spate">2D</button>
@@ -129,6 +130,11 @@
 </div>
 
 <div class="menu" id="menu" role="menu" hidden></div>
+<div class="present-info" id="presentInfo" aria-live="polite">
+  <p class="present-name" id="presentName"></p>
+  <p class="present-sub" id="presentSub"></p>
+  <div class="present-progress"><span id="presentBar"></span></div>
+</div>
 
 <dialog class="settings" id="settings">
   <div class="settings-shell">

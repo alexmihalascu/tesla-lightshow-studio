@@ -133,7 +133,7 @@ async function mount3d() {
     bar.setAttribute('role', 'group');
     bar.setAttribute('aria-label', 'Unghi cameră');
     const presets = [['orbit', 'Orbită'], ['three', '3/4'], ['front', 'Față'], ['side', 'Lateral'], ['rear', 'Spate'], ['top', 'Sus']];
-    const cam = store.get('camera', 'three');
+    const cam = presenting ? 'orbit' : store.get('camera', 'three');
     bar.innerHTML = presets.map(([k, l]) => `<button data-cam="${k}" aria-pressed="${k === cam}">${l}</button>`).join('');
     bar.addEventListener('click', e => {
       const b = e.target.closest('[data-cam]');
@@ -326,22 +326,118 @@ function renderGrid(onUsb) {
       <span class="tags">${s.lights != null ? `<span>${s.lights} lumini</span>` : '<span>comprimat</span>'}${partsOf(s).map(p => `<span>${p}</span>`).join('')}</span>
       <span class="play-fab" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M6 4 16 10 6 16Z" class="fill"/></svg></span>
     </button>`).join('') || `<p class="empty-note">${q ? 'Niciun proiect găsit' : 'Niciun proiect încă. Trage o melodie mai sus.'}</p>`;
-  $$('#grid .card-p').forEach(card => {
-    const s = list[+card.dataset.i], cv = card.querySelector('canvas'), g = cv.getContext('2d');
-    if (!s.activity) return;
-    const n = s.activity.length, w = cv.width / n;
-    s.activity.forEach((a, i) => {
-      const h = Math.max(3, a * 70);
-      g.fillStyle = `rgba(245,245,245,${0.25 + a * 0.75})`;
-      g.fillRect(i * w + 1, 78 - h, w - 2, h);
-      if (s.moving[i]) { g.fillStyle = '#3b82f6'; g.fillRect(i * w + 1, 84, w - 2, 5); }
-    });
+  $$('#grid .card-p').forEach(card => drawActivity(card.querySelector('canvas'), list[+card.dataset.i]));
+}
+function drawActivity(cv, s) {
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  if (!s?.activity) return;
+  const n = s.activity.length, w = cv.width / n;
+  s.activity.forEach((a, i) => {
+    const h = Math.max(3, a * 70);
+    g.fillStyle = `rgba(245,245,245,${0.25 + a * 0.75})`;
+    g.fillRect(i * w + 1, 78 - h, w - 2, h);
+    if (s.moving[i]) { g.fillStyle = '#3b82f6'; g.fillRect(i * w + 1, 84, w - 2, 5); }
   });
 }
 $('#grid').addEventListener('click', e => {
   const c = e.target.closest('.card-p');
   if (c) openShow(c.dataset.source, c.dataset.name);
 });
+
+// Preview pe card: la hover, o mașină mică (față + spate) rulează cele mai intense ~10 s din show, fără sunet
+const previewCache = new Map();
+let preview = null;
+function drawMini(g, o, W, H, t) {
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#030303';
+  g.fillRect(0, 0, W, H);
+  const lamp = (v, color, draw) => {
+    if (v <= 0.02) return;
+    g.save();
+    g.globalAlpha = v;
+    g.fillStyle = g.strokeStyle = color;
+    g.shadowColor = color;
+    g.shadowBlur = 14;
+    draw();
+    g.restore();
+  };
+  const body = cx => {
+    g.fillStyle = '#25282c';
+    g.beginPath();
+    g.roundRect(cx - 95, 34, 190, 40, 16);
+    g.fill();
+    g.fillStyle = '#121418';
+    g.beginPath();
+    g.moveTo(cx - 62, 36); g.quadraticCurveTo(cx, 6, cx + 62, 36); g.fill();
+  };
+  const W1 = W * 0.27, W2 = W * 0.73;
+  body(W1); body(W2);
+  // Față: partea stângă a imaginii = dreapta mașinii
+  for (const [side, dx] of [['R', -1], ['L', 1]]) {
+    const x = W1 + dx * 58;
+    lamp(Math.max(o[`outer${side}`], o[`inner${side}`]), '#f4f8ff', () => { g.beginPath(); g.ellipse(x, 50, 16, 5, 0, 0, 7); g.fill(); });
+    lamp(Math.max(o[`sig${side}`], o[`c4${side}`]), '#dfe9ff', () => { g.fillRect(x - 20, 42, 40, 2.5); });
+    lamp(o[`fturn${side}`], '#ffa628', () => { g.fillRect(x + dx * 18, 44, 7, 4); });
+    lamp(o[`fog${side}`], '#f4f8ff', () => { g.beginPath(); g.ellipse(x + dx * 8, 66, 6, 2.5, 0, 0, 7); g.fill(); });
+  }
+  // Spate: stânga imaginii = stânga mașinii
+  for (const [side, dx] of [['L', -1], ['R', 1]]) {
+    const x = W2 + dx * 56;
+    lamp(o[`tail${side}`] * 0.5, '#ff2b2b', () => { g.fillRect(x - 26, 44, 52, 6); });
+    lamp(o.brake, '#ff2b2b', () => { g.fillRect(x - 26, 44, 52, 6); });
+    lamp(o[`rturn${side}`], '#ffa628', () => { g.fillRect(x + dx * 18, 44, 10, 6); });
+    lamp(o[`reverse${side}`], '#f4f8ff', () => { g.fillRect(x - dx * 18, 52, 10, 3); });
+  }
+  lamp(o.brake, '#ff2b2b', () => { g.fillRect(W2 - 14, 14, 28, 2.5); });
+  lamp(o.plate * 0.8, '#f4f8ff', () => { g.fillRect(W2 - 18, 58, 36, 10); });
+  // Indicator pentru elementele care se mișcă
+  const moving = Object.values(o.closures).some(c => c.dance || (c.pos > 0.02 && c.pos < 0.98));
+  if (moving) { g.fillStyle = '#3b82f6'; g.beginPath(); g.arc(W - 12, 12, 4 + Math.sin(t * 8), 0, 7); g.fill(); }
+}
+async function startPreview(card) {
+  stopPreview();
+  const s = library[card.dataset.source]?.find(x => x.name === card.dataset.name);
+  if (!s || s.compressed) return;
+  const key = `${s.source}/${s.name}/${s.size}`;
+  const token = {};
+  preview = { card, token };
+  let pseq = previewCache.get(key);
+  if (!pseq) {
+    try {
+      pseq = parseFseq(await (await fetch(`/files/${s.source}/${encodeURIComponent(s.name)}.fseq`)).arrayBuffer());
+      previewCache.set(key, pseq);
+    } catch { return; }
+  }
+  if (preview?.token !== token) return;
+  const peak = s.activity ? s.activity.indexOf(Math.max(...s.activity)) : 0;
+  const start = Math.max(0, Math.floor(peak / 96 * pseq.frames) - 100);
+  const span = Math.min(pseq.frames - start, Math.round(10000 / pseq.step));
+  const pemu = createEmulator(cfg), cv = card.querySelector('canvas'), g = cv.getContext('2d');
+  const t0 = performance.now();
+  let prev = t0, lastF = -1;
+  const frameOf = f => pseq.data.subarray(pseq.off + f * pseq.ch, pseq.off + (f + 1) * pseq.ch);
+  (function tick(now) {
+    if (preview?.token !== token) return;
+    const f = start + Math.floor((now - t0) / pseq.step) % span;
+    const out = pemu.step(frameOf(f), Math.min(100, now - prev), f < lastF || lastF < 0, null);
+    lastF = f; prev = now;
+    drawMini(g, out, cv.width, cv.height, now / 1000);
+    requestAnimationFrame(tick);
+  })(t0);
+}
+function stopPreview() {
+  if (!preview) return;
+  const card = preview.card;
+  preview = null;
+  drawActivity(card.querySelector('canvas'), library[card.dataset.source]?.find(x => x.name === card.dataset.name));
+}
+$('#grid').addEventListener('pointerover', e => {
+  const c = e.target.closest('.card-p');
+  if (c && preview?.card !== c) startPreview(c);
+});
+$('#grid').addEventListener('pointerleave', stopPreview);
+$('#grid').addEventListener('focusin', e => { const c = e.target.closest('.card-p'); if (c) startPreview(c); });
 $$('[data-filter]').forEach(b => b.addEventListener('click', () => {
   gridFilter = b.dataset.filter;
   $$('[data-filter]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
@@ -357,9 +453,17 @@ $('#teslaCamNotice').addEventListener('click', () => openSettings('usb'));
 audio.addEventListener('play', renderLibrary);
 audio.addEventListener('pause', renderLibrary);
 
-async function openShow(source, name) {
+function parseFseq(buf) {
+  const b = new Uint8Array(buf), dv = new DataView(buf);
+  if (String.fromCharCode(...b.slice(0, 4)) !== 'PSEQ') throw new Error('Fișierul .fseq nu e valid.');
+  if (b[20] & 0x0f) throw new Error('Show-ul e comprimat. Exportă-l din xLights ca FSEQ v2 necomprimat.');
+  return { data: b, off: dv.getUint16(4, true), ch: dv.getUint32(10, true), frames: dv.getUint32(14, true), step: b[18] };
+}
+
+async function openShow(source, name, autoplay = true) {
   const s = library[source].find(x => x.name === name);
   if (!s) return;
+  stopPreview();
   audio.pause();
   current = { source, name };
   setCrumbs();
@@ -373,14 +477,14 @@ async function openShow(source, name) {
       fetch(base + '.fseq').then(r => { if (!r.ok) throw new Error('Nu pot citi fișierul .fseq.'); return r.arrayBuffer(); }),
       fetch(base + s.audio).then(r => { if (!r.ok) throw new Error('Nu pot citi melodia.'); return r.blob(); }),
     ]);
-    const b = new Uint8Array(buf), dv = new DataView(buf);
-    if (String.fromCharCode(...b.slice(0, 4)) !== 'PSEQ') throw new Error('Fișierul .fseq nu e valid.');
-    if (b[20] & 0x0f) throw new Error('Show-ul e comprimat. Exportă-l din xLights ca FSEQ v2 necomprimat.');
-    if (current.name !== name || current.source !== source) return;
-    seq = { data: b, off: dv.getUint16(4, true), ch: dv.getUint32(10, true), frames: dv.getUint32(14, true), step: b[18] };
+    const parsed = parseFseq(buf);
+    if (current?.name !== name || current?.source !== source) return;
+    seq = parsed;
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = URL.createObjectURL(blob);
     audio.src = objectUrl;
+    // Pornește singur; dacă browserul blochează redarea automată, rămâne butonul Play
+    if (autoplay) audio.play().catch(() => {});
     snapNext = true;
     emu = createEmulator(cfg);
     setView(view);
@@ -495,6 +599,43 @@ $('#copyBtn').addEventListener('click', async () => {
   if (!r.ok) { btn.querySelector('span').textContent = j.error; setTimeout(renderLibrary, 3500); return; }
   await refresh();
 });
+
+// ---------- Mod prezentare ----------
+let presenting = false, viewBefore = view, presentList = [], presentIdx = 0;
+function playPresent() {
+  const s = presentList[presentIdx % presentList.length];
+  $('#presentName').textContent = s.name;
+  $('#presentSub').textContent = `${VEHICLES[cfg.vehicle].name}, ${presentIdx % presentList.length + 1} din ${presentList.length}. Esc pentru ieșire`;
+  openShow(s.source, s.name, true);
+}
+function startPresentation() {
+  // Show-urile de pe calculator, apoi cele doar de pe stick
+  const local = new Set(library.local.map(s => s.name));
+  presentList = [...library.local, ...library.usb.filter(s => !local.has(s.name))].filter(s => !s.compressed);
+  if (!presentList.length) return;
+  presenting = true;
+  viewBefore = view;
+  presentIdx = current ? Math.max(0, presentList.findIndex(s => s.name === current.name)) : 0;
+  $('#app').classList.add('present');
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  setView('3d');
+  scene3d?.setPreset('orbit');
+  playPresent();
+}
+function stopPresentation() {
+  if (!presenting) return;
+  presenting = false;
+  $('#app').classList.remove('present');
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  setView(viewBefore);
+}
+$('#presentBtn').addEventListener('click', startPresentation);
+audio.addEventListener('ended', () => { if (presenting) { presentIdx++; playPresent(); } });
+audio.addEventListener('timeupdate', () => {
+  if (presenting && audio.duration) $('#presentBar').style.width = `${audio.currentTime / audio.duration * 100}%`;
+});
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) stopPresentation(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') stopPresentation(); });
 
 // ---------- Setări + bara laterală ----------
 const dlg = $('#settings');
