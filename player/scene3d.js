@@ -49,11 +49,11 @@ const CLOSURE_KEYS = {
 const GLB_LIGHTS = [
   // [material, culoare, lămpi, intensitate] — roșul are intensitate mică ca să nu se satureze în alb
   [/front_light/i, WHITE, s => [`outer${s}`, `inner${s}`, `sig${s}`, `c4${s}`], 1.6],
-  [/indicator_.f|indicator_lights/i, AMBER, s => [`fturn${s}`], 0.8],
-  [/indicator_.r|light_turn_.r/i, AMBER, s => [`rturn${s}`], 0.8],
+  [/indicator_.f|indicator_lights/i, AMBER, s => [`fturn${s}`], 2],
+  [/indicator_.r|light_turn_.r/i, AMBER, s => [`rturn${s}`], 2],
   [/fog/i, WHITE, s => [`fog${s}`], 1.2],
-  [/rear_light/i, RED, s => [`tail${s}`, 'brake'], 0.35],
-  [/break|brake/i, RED, () => ['brake'], 0.35],
+  [/rear_light/i, RED, s => [`tail${s}`, 'brake'], 1.1, { tail: 0.2 }], // poziție slab, frână puternic
+  [/break|brake/i, RED, () => ['brake'], 1.1],
   [/rev(light|ese)/i, WHITE, s => [`reverse${s}`], 1],
   [/platnomor|plate/i, WHITE, () => ['plate'], 0.5],
 ];
@@ -300,7 +300,8 @@ export async function createScene3D(container, layout, vehicleKey) {
       const size = m.type === 'Custom' ? 46 : isCT ? 26 : 20;
       if (LAMPS[name]) {
         const [k, color] = LAMPS[name];
-        nodes.forEach(p => sprites.push({ s: sprite(p, color, size), get: o => o[k] || 0 }));
+        const weight = k.startsWith('tail') ? 0.4 : 1; // stopul de poziție e mult mai slab decât frâna
+        nodes.forEach(p => sprites.push({ s: sprite(p, color, size), get: o => (o[k] || 0) * weight }));
         anchor([k], nodes[Math.floor(nodes.length / 2)]);
       } else if (BARS[name]) {
         const [k, color] = BARS[name];
@@ -379,7 +380,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       const name = o.material?.name || ''; // potrivire doar pe material: nodurile pot conține și rame negre
       const rule = GLB_LIGHTS.find(([re]) => re.test(name));
       if (!rule) continue;
-      const [, color, keysFor, base = 1] = rule;
+      const [, color, keysFor, base = 1, w = {}] = rule;
       const pos = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
       const side = pos.z < 0 ? 'L' : 'R';
       // Piesă centrală (ex. lampa de marșarier pe toată lățimea): ascultă de ambele părți
@@ -388,7 +389,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       mat.emissive = new THREE.Color(color);
       mat.emissiveIntensity = 0;
       o.material = mat;
-      emissive.push({ mat, keys, base, name, pos });
+      emissive.push({ mat, keys, base, w, name, pos });
       anchor(keys, pos);
       precise++;
     }
@@ -412,7 +413,7 @@ export async function createScene3D(container, layout, vehicleKey) {
           const keys = front
             ? (side === 'C' ? ['sigL', 'sigR', 'c4L', 'c4R'] : [`outer${side}`, `inner${side}`, `sig${side}`, `c4${side}`])
             : (side === 'C' ? ['tailL', 'tailR', 'brake'] : [`tail${side}`, 'brake']);
-          emissive.push({ mat, keys, base: front ? 1.6 : 0.35, name: `${name} ${g}`, pos });
+          emissive.push({ mat, keys, base: front ? 1.6 : 0.7, w: front ? {} : { tail: 0.28 }, name: `${name} ${g}`, pos });
           anchor(keys, pos);
         }
         o.visible = false;
@@ -609,7 +610,7 @@ export async function createScene3D(container, layout, vehicleKey) {
       }
       for (const e of emissive) {
         let v = 0;
-        for (const k of e.keys) if ((out[k] || 0) > v) v = out[k];
+        for (const k of e.keys) v = Math.max(v, (out[k] || 0) * (k.startsWith('tail') ? (e.w?.tail ?? 1) : 1));
         e.mat.emissiveIntensity = v * e.base * 4;
       }
       for (const r of rig) {

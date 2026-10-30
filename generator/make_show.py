@@ -49,10 +49,11 @@ def analyze(y):
         return f / (f.std() + 1e-9)
 
     onset = flux(freqs < 11000)
-    low = flux(freqs < 150)
-    high = flux((freqs > 2000) & (freqs < 8000))
+    low = flux(freqs < 150)                       # tobă mare / bas
+    mid = flux((freqs > 1000) & (freqs < 4000))   # snare, clap
+    high = flux((freqs > 2000) & (freqs < 8000))  # cinele
     energy = np.sqrt((frames ** 2).mean(axis=1))
-    return onset, low, high, energy
+    return onset, low, mid, high, energy
 
 
 def tempo_period(onset):
@@ -110,15 +111,29 @@ def segments(mask):
     return list(zip(edges[::2], edges[1::2]))
 
 
-def build(onset, low, high, energy, max_mode=False, model="m3"):
+def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
     n = len(onset)
     data = np.zeros((n, NCH), np.uint8)
     lvl = levels(energy, (25, 55) if max_mode else (35, 70))
     period = tempo_period(onset)
     beats = track_beats(onset, period)
     kicks = pick_peaks(low, min_gap=11, k=1.2)   # >= 220 ms între flash-uri
+    snares = pick_peaks(mid, min_gap=11, k=1.4)
     hats = pick_peaks(high, min_gap=11, k=1.5)
     flash = 6  # 120 ms (Tesla recomandă >= 100 ms)
+    # Măsuri de 4 timpi: primul timp e faza cu cel mai mult bas pe beat
+    phase = int(np.argmax([low[beats[p::4]].sum() for p in range(4)]))
+    bars = beats[phase::4]
+    bar_end = np.r_[bars[1:], n]
+    # Nivelul pe măsură (stabil, nu pe cadru); „build” = cele 2 măsuri dinaintea unui refren
+    bar_lvl = [int(np.median(lvl[a:max(a + 1, b)])) for a, b in zip(bars, bar_end)]
+    build_bar = [0] * len(bars)  # 0 = nu, 1 = prima măsură de build, 2 = ultima (mai rapidă)
+    for i in range(1, len(bars)):
+        if bar_lvl[i] == 2 and bar_lvl[i - 1] < 2:
+            for j, kind in ((i - 2, 1), (i - 1, 2)):
+                if j >= 0 and bar_lvl[j] < 2:
+                    build_bar[j] = kind
+    lvl_at = lambda t: bar_lvl[max(0, int(np.searchsorted(bars, t, "right")) - 1)]
 
     def put(chs, a, b, v):
         a, b = max(0, a), min(n, b)
@@ -135,27 +150,67 @@ def build(onset, low, high, energy, max_mode=False, model="m3"):
     put([L_TAIL, R_TAIL, L_SIG, R_SIG], 0, 2 * FPS + 3, RAMP_ON_2S)
     put([L_TAIL, R_TAIL, L_SIG, R_SIG, L_INNER, R_INNER], end, n - 5, RAMP_OFF_2S)
 
-    for i, b in enumerate(beats):
-        if b >= end:
+    q = period / 4  # o șaisprezecime
+    half = max(flash, int(period * 0.4))
+    POS = [L_AUX, R_AUX, L_MARK, R_MARK]  # pe Model 3/Y sunt o singură ieșire: pauzele contează
+    CHASE = [L_FTURN, L_FOG, L_SIG, L_INNER, L_OUTER, R_OUTER, R_INNER, R_SIG, R_FOG, R_FTURN]
+    for bi, (a, b) in enumerate(zip(bars, bar_end)):
+        if a >= end:
             break
-        l, half = lvl[b], max(flash, int(period * 0.4))
-        # mereu: semnătura + canalul 4 pulsează pe beat
-        pulse([L_SIG, R_SIG, *CH4], b)
-        if l >= 1:  # faza lungă alternează stânga/dreapta + semnalizări spate
-            side = (L_OUTER, L_RTURN) if i % 2 == 0 else (R_OUTER, R_RTURN)
-            put(list(side), b, b + half, ON)
-        if l == 2:
-            put([L_FOG, R_FOG, REAR_FOG, REVERSE, PLATE], b, b + half, ON)
-            if i % 4 == 0:  # downbeat: lovitură cu tot
-                put([L_OUTER, R_OUTER, L_AUX, R_AUX, L_MARK, R_MARK, L_REP, R_REP, BRAKE], b, b + 2 * flash, ON)
-                pulse([L_INNER, R_INNER, L_FTURN, R_FTURN], b, RAMP_OFF_2S, 2 * FPS + 3)
+        b = min(int(b), end)
+        L = bar_lvl[bi]
+        bar_beats = beats[(beats >= a) & (beats < b)]
+        if build_bar[bi]:
+            # Pregătirea refrenului: lumina fuge stânga-dreapta, întâi pe optimi, apoi pe șaisprezecimi
+            step = period / 2 if build_bar[bi] == 1 else q
+            for k, t in enumerate(np.arange(a, b, step)):
+                ch = CHASE[k % len(CHASE)] if (k // len(CHASE)) % 2 == 0 else CHASE[::-1][k % len(CHASE)]
+                put([ch], int(t), int(t) + flash, ON)
+                if build_bar[bi] == 2 and k % 2 == 0:
+                    put([BRAKE], int(t), int(t) + flash, ON)
+            continue
+        if L == 0:
+            # Liniștit: farurile „respiră” (ramp lent), pozițiile stau aprinse, semnătura pulsează pe beat
+            mid_bar = a + (b - a) // 2
+            put([L_INNER, R_INNER], a, mid_bar, RAMP_ON_2S)
+            put([L_INNER, R_INNER], mid_bar, b, RAMP_OFF_2S)
+            put(POS, a, b, ON)
+            for t in bar_beats:
+                pulse([L_SIG, R_SIG, *CH4], int(t))
+            continue
+        for i, t in enumerate(bar_beats):
+            t = int(t)
+            pulse([L_SIG, R_SIG, *CH4], t)
+            if L == 1:
+                # Strofă: faza lungă alternează stânga/dreapta, cu semnalizarea spate de pe aceeași parte
+                put([L_OUTER, L_RTURN] if i % 2 == 0 else [R_OUTER, R_RTURN], t, t + half, ON)
+                continue
+            # Refren: baleiaj „matrix” pe faruri, exterior -> interior -> interior -> exterior,
+            # cu direcția inversată la fiecare măsură
+            sweep = [L_OUTER, L_INNER, R_INNER, R_OUTER]
+            for s, ch in enumerate(sweep if bi % 2 == 0 else sweep[::-1]):
+                put([ch], int(t + s * q), int(t + s * q) + max(flash, int(q)), ON)
+            off = int(t + period / 2)  # contratimp: lumini de poziție
+            put(POS, off, off + flash, ON)
+            if i % 2 == 1:  # timpii 2 și 4: ceață față + spate
+                put([L_FOG, R_FOG, REAR_FOG], t, t + half, ON)
+        if L == 2 and bi % 4 == 0:  # la fiecare 4 măsuri de refren: lovitură cu tot
+            put([L_OUTER, R_OUTER, L_INNER, R_INNER, *POS, L_REP, R_REP, BRAKE, REVERSE, PLATE], a, a + 2 * flash, ON)
+            pulse([L_FTURN, R_FTURN], a, RAMP_OFF_2S, 2 * FPS + 3)
 
     for t in kicks:
-        if t < end and lvl[t] >= 1:
+        if t < end and lvl_at(t) >= 1:
             put([BRAKE], t, t + flash, ON)
-            pulse([L_INNER, R_INNER], t)
+            if lvl_at(t) == 1:
+                pulse([L_INNER, R_INNER], t)
+            else:
+                put([REAR_FOG], t, t + flash, ON)
+    for t in snares:
+        if t < end and lvl_at(t) >= 1:
+            # snare: procitoare + repetoare în strofă, flash cu toate farurile în refren
+            put([L_FOG, R_FOG, L_REP, R_REP] if lvl_at(t) == 1 else [L_FOG, R_FOG, L_OUTER, R_OUTER, L_INNER, R_INNER], t, t + flash, ON)
     for j, t in enumerate(hats):
-        if t < end and lvl[t] == 2:
+        if t < end and lvl_at(t) == 2:
             pulse([L_FTURN, L_REP] if j % 2 == 0 else [R_FTURN, R_REP], t)
 
     # Oglinzi: se pliază pe cele mai puternice kick-uri din refren (8 perechi = 16/20, în --max 10 = 20/20)
@@ -276,8 +331,8 @@ def generate(src, out, name="lightshow", max_mode=False, model="m3"):
     if model not in MODELS:
         raise ValueError(f"model necunoscut: {model} (alege din {', '.join(MODELS)})")
     out.mkdir(parents=True, exist_ok=True)
-    onset, low, high, energy = analyze(load_audio(src))
-    data, bpm, nbeats = build(onset, low, high, energy, max_mode, model)
+    onset, low, mid, high, energy = analyze(load_audio(src))
+    data, bpm, nbeats = build(onset, low, mid, high, energy, max_mode, model)
 
     # Limitele oficiale Tesla per închidere (Open/Dance/Close contează)
     limits = {L_MIRROR: 20, R_MIRROR: 20, CHARGE_PORT: 3, LIFTGATE: 6,
