@@ -231,6 +231,9 @@ dialog.settings::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(2
 .row + .row { border-top: 1px solid var(--line); }
 .row strong { font-weight: 600; }
 .row p { margin: 3px 0 0; color: var(--muted); font-size: 13px; max-width: 56ch; }
+.sync { display: flex; align-items: center; gap: 10px; min-width: 220px; }
+.sync input { flex: 1; accent-color: var(--blue); }
+.sync span { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 56px; text-align: right; }
 .row select { background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; min-width: 220px; }
 
 @media (max-width: 900px) {

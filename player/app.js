@@ -6,15 +6,16 @@ const $$ = s => [...document.querySelectorAll(s)];
 const audio = $('#audio');
 const store = {
   get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch { /* stocare indisponibilă: setarea rămâne doar în sesiune */ } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable: the setting only lasts this session */ } },
 };
 const ELEMENTS = {
-  max: { name: 'Tot ce se mișcă', hint: 'Lumini, oglinzi, geamuri, trapă și ce mai are modelul ales' },
-  lights: { name: 'Lumini, oglinzi și trapă', hint: 'Fără geamuri și portbagaj' },
+  max: { name: 'Everything that moves', hint: 'Lights, mirrors, windows, charge port and whatever else the model has' },
+  lights: { name: 'Lights, mirrors and charge port', hint: 'No windows or liftgate' },
 };
 const cfg = {
   vehicle: store.get('vehicle', 'm3'), region: store.get('region', 'eu'),
   headlights: store.get('headlights', 'reflector'), elements: store.get('elements', 'max'),
+  syncMs: +store.get('syncMs', '0') || 0,
 };
 if (!VEHICLES[cfg.vehicle]) cfg.vehicle = 'm3';
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -44,9 +45,9 @@ function openMenu(btn) {
       <button class="menu-item" role="menuitemradio" aria-checked="${i.k === def.value}" data-k="${i.k}">
         <strong>${esc(i.title)}</strong>${i.hint ? `<small>${esc(i.hint)}</small>` : ''}
         <span class="kbd">${i.kbd ? `<kbd>${i.kbd}</kbd>` : ''}${i.k === def.value ? '<svg class="check" viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"/></svg>' : ''}</span>
-      </button>`).join('') || '<p class="empty-note">Nimic găsit</p>';
+      </button>`).join('') || '<p class="empty-note">Nothing found</p>';
   };
-  menu.innerHTML = `${def.search ? '<label class="menu-search"><svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="m13 13 4 4"/></svg><input placeholder="Caută modele…" aria-label="Caută modele"></label>' : ''}<div class="menu-list"></div>`;
+  menu.innerHTML = `${def.search ? '<label class="menu-search"><svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="m13 13 4 4"/></svg><input placeholder="Search models…" aria-label="Search models"></label>' : ''}<div class="menu-list"></div>`;
   draw();
   menu.hidden = false;
   const r = btn.getBoundingClientRect(), mh = menu.offsetHeight;
@@ -102,7 +103,7 @@ for (const [id, k] of [['#setVehicle', 'vehicle'], ['#setRegion', 'region'], ['#
   $(id).addEventListener('change', e => setCfg(k, e.target.value));
 }
 
-// ---------- Vizualizări ----------
+// ---------- Views ----------
 function mountViews() {
   scene2d = createScene2D($('#view2d'), cfg.vehicle);
   if (has3d() && seq) mount3d();
@@ -111,7 +112,7 @@ async function mount3d() {
   scene3d?.dispose();
   scene3d = null;
   const box = $('#view3d');
-  box.innerHTML = '<p class="view-msg">Se încarcă modelul 3D oficial Tesla…</p>';
+  box.innerHTML = '<p class="view-msg">Loading the 3D model…</p>';
   try {
     if (!layout) {
       const r = await fetch('/api/layout');
@@ -125,15 +126,15 @@ async function mount3d() {
     box.querySelector('.view-msg')?.remove();
     const note = document.createElement('p');
     note.className = 'view-note';
-    note.textContent = !s.official ? `Model 3D: ${s.attribution || 'model propriu'}`
-      : key === 'ct' ? 'Cybertruck oficial Tesla. Mișcările apar ca indicatori galbeni.'
-      : key === 'ms' ? 'Model S oficial Tesla'
-      : `Model S oficial Tesla, cu emulatorul pentru ${VEHICLES[key].name}`;
+    note.textContent = !s.official ? `3D model: ${s.attribution || 'custom model'}`
+      : key === 'ct' ? 'Official Tesla Cybertruck. Moving parts show as yellow markers.'
+      : key === 'ms' ? 'Official Tesla Model S'
+      : `Official Tesla Model S, emulating ${VEHICLES[key].name}`;
     const bar = document.createElement('div');
     bar.className = 'cam-bar';
     bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', 'Unghi cameră');
-    const presets = [['orbit', 'Orbită'], ['three', '3/4'], ['front', 'Față'], ['side', 'Lateral'], ['rear', 'Spate'], ['top', 'Sus']];
+    bar.setAttribute('aria-label', 'Camera angle');
+    const presets = [['orbit', 'Orbit'], ['three', '3/4'], ['front', 'Front'], ['side', 'Side'], ['rear', 'Rear'], ['top', 'Top']];
     const cam = presenting ? 'orbit' : store.get('camera', 'three');
     bar.innerHTML = presets.map(([k, l]) => `<button data-cam="${k}" aria-pressed="${k === cam}">${l}</button>`).join('');
     bar.addEventListener('click', e => {
@@ -147,7 +148,7 @@ async function mount3d() {
     s.setPreset(cam, true);
     scene3d = s;
   } catch (err) {
-    box.innerHTML = `<p class="view-msg">Modelul 3D nu s-a putut încărca: ${esc(err.message)}<br>Dezarhivează tesla_xlights_show_folder.zip din repo-ul teslamotors/light-show în Downloads.</p>`;
+    box.innerHTML = `<p class="view-msg">The 3D model couldn't load: ${esc(err.message)}<br>Unzip tesla_xlights_show_folder.zip from the teslamotors/light-show repo into Downloads.</p>`;
   }
 }
 const has3d = () => view === '3d' || view === 'split';
@@ -168,19 +169,19 @@ $$('.seg-btn[data-view]').forEach(b => b.addEventListener('click', () => setView
 
 // ---------- Timeline ----------
 const ROWS = [
-  ['Faruri', [0, 1, 2, 3], '#f5f5f5'],
-  ['Semnătură', [4, 5, 6, 7, 8, 9, 10, 11], '#b9c7dc'],
-  ['Semnalizări', [12, 13, 20, 21, 22, 23], '#ffa628'],
-  ['Ceață, poziție', [14, 15, 16, 17, 18, 19, 28], '#d0d0d0'],
-  ['Frână', [24], '#ff5a4f'],
-  ['Stopuri', [25, 26], '#b23a33'],
-  ['Marșarier, număr', [27, 29], '#d0d0d0'],
+  ['Headlights', [0, 1, 2, 3], '#f5f5f5'],
+  ['Signature', [4, 5, 6, 7, 8, 9, 10, 11], '#b9c7dc'],
+  ['Turn signals', [12, 13, 20, 21, 22, 23], '#ffa628'],
+  ['Fog, park', [14, 15, 16, 17, 18, 19, 28], '#d0d0d0'],
+  ['Brake', [24], '#ff5a4f'],
+  ['Tail', [25, 26], '#b23a33'],
+  ['Reverse, plate', [27, 29], '#d0d0d0'],
   ['Light bar', Array.from({ length: 120 }, (_, i) => 46 + i), '#f5f5f5'],
-  ['Oglinzi', [34, 35], '#3b82f6', true],
-  ['Geamuri', [36, 37, 38, 39], '#3b82f6', true],
-  ['Portbagaj', [40], '#3b82f6', true],
-  ['Uși, mânere', [30, 31, 32, 33, 41, 42, 43, 44], '#3b82f6', true],
-  ['Trapă', [45], '#3b82f6', true],
+  ['Mirrors', [34, 35], '#3b82f6', true],
+  ['Windows', [36, 37, 38, 39], '#3b82f6', true],
+  ['Liftgate', [40], '#3b82f6', true],
+  ['Doors, handles', [30, 31, 32, 33, 41, 42, 43, 44], '#3b82f6', true],
+  ['Charge port', [45], '#3b82f6', true],
 ];
 const ROW_H = 11;
 let rows = ROWS;
@@ -237,13 +238,15 @@ addEventListener('keydown', e => {
     return;
   }
   if (!seq || e.target.closest('input, select, dialog, .menu')) return;
+  if (e.key === ',' || e.key === '.') { setSync(cfg.syncMs + (e.key === '.' ? 10 : -10)); return; }
   if (e.code === 'Space' && !e.target.closest('button')) { e.preventDefault(); audio.paused ? audio.play() : audio.pause(); }
   if (e.code === 'ArrowRight') audio.currentTime += 5;
   if (e.code === 'ArrowLeft') audio.currentTime = Math.max(0, audio.currentTime - 5);
 });
 (function loop(now) {
   if (seq) {
-    const t = audio.currentTime, total = seq.frames * seq.step / 1000, f = frameAt(t);
+    // syncMs > 0 = sound reaches you later than the browser reports (Bluetooth, external speakers)
+    const t = Math.max(0, audio.currentTime - cfg.syncMs / 1000), total = seq.frames * seq.step / 1000, f = frameAt(t);
     const history = cb => { for (let i = 0; i <= f; i++) cb(frameView(i)); };
     history.step = seq.step;
     const out = emu.step(frameView(f), Math.min(100, now - last), snapNext, history);
@@ -257,9 +260,9 @@ addEventListener('keydown', e => {
   requestAnimationFrame(loop);
 })(performance.now());
 
-// ---------- Bibliotecă ----------
-const partsOf = s => [s.mirrors && 'oglinzi', s.windows && 'geamuri', s.liftgate && 'portbagaj', s.chargePort && 'trapă'].filter(Boolean);
-const metaOf = s => s.lights == null ? 'show comprimat' : [`${s.lights} lumini`, ...partsOf(s)].join(', ');
+// ---------- Library ----------
+const partsOf = s => [s.mirrors && 'mirrors', s.windows && 'windows', s.liftgate && 'liftgate', s.chargePort && 'charge port'].filter(Boolean);
+const metaOf = s => s.lights == null ? 'compressed show' : [`${s.lights} lights`, ...partsOf(s)].join(', ');
 let lastLibrary = '';
 async function refresh() {
   const text = await (await fetch('/api/shows')).text();
@@ -277,43 +280,43 @@ function renderLibrary() {
     const synced = s.source === 'local' && onUsb.get(s.name) === s.size;
     return `<li><button class="item${active ? ' active' : ''}" data-source="${s.source}" data-name="${esc(s.name)}">
       <span class="meta"><span>${esc(metaOf(s))}</span>${fmt(s.duration)}</span>
-      <span class="title"><span>${esc(s.name)}</span>${playing ? '<i class="spark" aria-label="se redă">✺</i>' : synced
-        ? '<svg viewBox="0 0 20 20" aria-label="e și pe stick"><title>E și pe stick</title><rect x="6" y="2.5" width="8" height="6" rx="1"/><rect x="4" y="8.5" width="12" height="9" rx="2"/></svg>' : ''}</span>
+      <span class="title"><span>${esc(s.name)}</span>${playing ? '<i class="spark" aria-label="playing">✺</i>' : synced
+        ? '<svg viewBox="0 0 20 20" aria-label="also on the drive"><title>Also on the drive</title><rect x="6" y="2.5" width="8" height="6" rx="1"/><rect x="4" y="8.5" width="12" height="9" rx="2"/></svg>' : ''}</span>
     </button></li>`;
   };
   const filt = list => list.filter(s => !q || s.name.toLowerCase().includes(q));
   const local = filt(library.local), usb = filt(library.usb);
-  $('#local').innerHTML = local.map(item).join('') || `<p class="empty-note">${q ? 'Nimic găsit' : 'Niciun show încă'}</p>`;
+  $('#local').innerHTML = local.map(item).join('') || `<p class="empty-note">${q ? 'Nothing found' : 'No shows yet'}</p>`;
   $('#localCount').textContent = library.local.length || '';
-  $('#usbTitle').textContent = library.usbDrive ? `Pe stick ${library.usbDrive}` : 'Pe stick';
+  $('#usbTitle').textContent = library.usbDrive ? `On drive ${library.usbDrive}` : 'On USB drive';
   $('#usbCount').textContent = library.usb.length || '';
-  $('#usb').innerHTML = library.usbDrive ? (usb.map(item).join('') || `<p class="empty-note">${q ? 'Nimic găsit' : 'Stickul nu are show-uri'}</p>`)
-    : '<p class="empty-note">Stickul nu e conectat</p>';
+  $('#usb').innerHTML = library.usbDrive ? (usb.map(item).join('') || `<p class="empty-note">${q ? 'Nothing found' : 'No shows on the drive'}</p>`)
+    : '<p class="empty-note">No drive connected</p>';
   if (!current) renderGrid(onUsb);
   $('#teslaCamNotice').hidden = !library.usbHasTeslaCam;
   $('#teslaCamRow').hidden = !library.usbHasTeslaCam;
-  $('#usbInfo').textContent = library.usbDrive ? `${library.usbDrive}, ${library.usb.length} show-uri în LightShow` : 'Niciun stick Tesla conectat.';
+  $('#usbInfo').textContent = library.usbDrive ? `${library.usbDrive}, ${library.usb.length} shows in LightShow` : 'No Tesla drive connected.';
   const showCopy = current?.source === 'local';
   $('#copyBtn').hidden = !showCopy;
   if (showCopy) {
     const s = library.local.find(x => x.name === current.name);
     const synced = s && onUsb.get(s.name) === s.size;
     $('#copyBtn').disabled = synced || !library.usbDrive;
-    $('#copyBtn span').textContent = synced ? 'E pe stick' : 'Copiază pe stick';
+    $('#copyBtn span').textContent = synced ? 'On drive' : 'Copy to drive';
   }
 }
 const ICON_USB = '<svg viewBox="0 0 20 20"><rect x="6" y="2.5" width="8" height="6" rx="1"/><rect x="4" y="8.5" width="12" height="9" rx="2"/></svg>';
 const ICON_PC = '<svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="10" rx="1.5"/><path d="M7 17h6M10 14v3"/></svg>';
 function setCrumbs() {
   $('#crumbs').innerHTML = current
-    ? `<button class="crumb-link" id="homeCrumb">Proiecte</button><span class="sep">/</span>
-       <span class="crumb-muted">${current.source === 'usb' ? `${ICON_USB}Pe stick ${esc(library.usbDrive || '')}` : `${ICON_PC}Pe calculator`}</span>
+    ? `<button class="crumb-link" id="homeCrumb">Projects</button><span class="sep">/</span>
+       <span class="crumb-muted">${current.source === 'usb' ? `${ICON_USB}On drive ${esc(library.usbDrive || '')}` : `${ICON_PC}On computer`}</span>
        <span class="sep">/</span><strong>${esc(current.name)}</strong>`
-    : '<strong>Proiecte</strong>';
+    : '<strong>Projects</strong>';
   $('#homeCrumb')?.addEventListener('click', showEmpty);
 }
 
-// Cardurile de proiect: amprenta de activitate desenată din datele serverului
+// Project cards: activity fingerprint drawn from server data
 let gridFilter = 'all';
 function renderGrid(onUsb) {
   const q = $('#search').value.trim().toLowerCase();
@@ -321,12 +324,12 @@ function renderGrid(onUsb) {
     .filter(s => !q || s.name.toLowerCase().includes(q));
   $('#grid').innerHTML = list.map((s, i) => `
     <button class="card-p" data-source="${s.source}" data-name="${esc(s.name)}" data-i="${i}">
-      <span class="meta">${s.source === 'usb' ? `${ICON_USB}Pe stick` : `${ICON_PC}Pe calculator${onUsb.get(s.name) === s.size ? ', și pe stick' : ''}`}<span class="dur">${fmt(s.duration)}</span></span>
+      <span class="meta">${s.source === 'usb' ? `${ICON_USB}On drive` : `${ICON_PC}On computer${onUsb.get(s.name) === s.size ? ', also on drive' : ''}`}<span class="dur">${fmt(s.duration)}</span></span>
       <span class="name">${esc(s.name)}</span>
       <canvas width="500" height="92" aria-hidden="true"></canvas>
-      <span class="tags">${s.lights != null ? `<span>${s.lights} lumini</span>` : '<span>comprimat</span>'}${partsOf(s).map(p => `<span>${p}</span>`).join('')}</span>
+      <span class="tags">${s.lights != null ? `<span>${s.lights} lights</span>` : '<span>compressed</span>'}${partsOf(s).map(p => `<span>${p}</span>`).join('')}</span>
       <span class="play-fab" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M6 4 16 10 6 16Z" class="fill"/></svg></span>
-    </button>`).join('') || `<p class="empty-note">${q ? 'Niciun proiect găsit' : 'Niciun proiect încă. Trage o melodie mai sus.'}</p>`;
+    </button>`).join('') || `<p class="empty-note">${q ? 'No projects found' : 'No projects yet. Drop a song above.'}</p>`;
   $$('#grid .card-p').forEach(card => drawActivity(card.querySelector('canvas'), list[+card.dataset.i]));
 }
 function drawActivity(cv, s) {
@@ -346,7 +349,7 @@ $('#grid').addEventListener('click', e => {
   if (c) openShow(c.dataset.source, c.dataset.name);
 });
 
-// Preview pe card: la hover, o mașină mică (față + spate) rulează cele mai intense ~10 s din show, fără sunet
+// Card preview: on hover, a small car (front + rear) plays the show's busiest ~10 s, muted
 const previewCache = new Map();
 let preview = null;
 function drawMini(g, o, W, H, t) {
@@ -374,7 +377,7 @@ function drawMini(g, o, W, H, t) {
   };
   const W1 = W * 0.27, W2 = W * 0.73;
   body(W1); body(W2);
-  // Față: partea stângă a imaginii = dreapta mașinii
+  // Front: left of the image = right side of the car
   for (const [side, dx] of [['R', -1], ['L', 1]]) {
     const x = W1 + dx * 58;
     lamp(Math.max(o[`outer${side}`], o[`inner${side}`]), '#f4f8ff', () => { g.beginPath(); g.ellipse(x, 50, 16, 5, 0, 0, 7); g.fill(); });
@@ -382,7 +385,7 @@ function drawMini(g, o, W, H, t) {
     lamp(o[`fturn${side}`], '#ffa628', () => { g.fillRect(x + dx * 18, 44, 7, 4); });
     lamp(o[`fog${side}`], '#f4f8ff', () => { g.beginPath(); g.ellipse(x + dx * 8, 66, 6, 2.5, 0, 0, 7); g.fill(); });
   }
-  // Spate: stânga imaginii = stânga mașinii
+  // Rear: left of the image = left side of the car
   for (const [side, dx] of [['L', -1], ['R', 1]]) {
     const x = W2 + dx * 56;
     lamp(o[`tail${side}`] * 0.5, '#ff2b2b', () => { g.fillRect(x - 26, 44, 52, 6); });
@@ -392,7 +395,7 @@ function drawMini(g, o, W, H, t) {
   }
   lamp(o.brake, '#ff2b2b', () => { g.fillRect(W2 - 14, 14, 28, 2.5); });
   lamp(o.plate * 0.8, '#f4f8ff', () => { g.fillRect(W2 - 18, 58, 36, 10); });
-  // Indicator pentru elementele care se mișcă
+  // Marker for moving parts
   const moving = Object.values(o.closures).some(c => c.dance || (c.pos > 0.02 && c.pos < 0.98));
   if (moving) { g.fillStyle = '#3b82f6'; g.beginPath(); g.arc(W - 12, 12, 4 + Math.sin(t * 8), 0, 7); g.fill(); }
 }
@@ -456,8 +459,8 @@ audio.addEventListener('pause', renderLibrary);
 
 function parseFseq(buf) {
   const b = new Uint8Array(buf), dv = new DataView(buf);
-  if (String.fromCharCode(...b.slice(0, 4)) !== 'PSEQ') throw new Error('Fișierul .fseq nu e valid.');
-  if (b[20] & 0x0f) throw new Error('Show-ul e comprimat. Exportă-l din xLights ca FSEQ v2 necomprimat.');
+  if (String.fromCharCode(...b.slice(0, 4)) !== 'PSEQ') throw new Error('The .fseq file is not valid.');
+  if (b[20] & 0x0f) throw new Error('The show is compressed. Export it from xLights as uncompressed FSEQ v2.');
   return { data: b, off: dv.getUint16(4, true), ch: dv.getUint32(10, true), frames: dv.getUint32(14, true), step: b[18] };
 }
 
@@ -471,12 +474,12 @@ async function openShow(source, name, autoplay = true) {
   renderLibrary();
   $('#empty').hidden = true;
   $('#dock').hidden = false;
-  $('#time').textContent = 'Se încarcă…';
+  $('#time').textContent = 'Loading…';
   try {
     const base = `/files/${source}/${encodeURIComponent(name)}`;
     const [buf, blob] = await Promise.all([
-      fetch(base + '.fseq').then(r => { if (!r.ok) throw new Error('Nu pot citi fișierul .fseq.'); return r.arrayBuffer(); }),
-      fetch(base + s.audio).then(r => { if (!r.ok) throw new Error('Nu pot citi melodia.'); return r.blob(); }),
+      fetch(base + '.fseq').then(r => { if (!r.ok) throw new Error("Can't read the .fseq file."); return r.arrayBuffer(); }),
+      fetch(base + s.audio).then(r => { if (!r.ok) throw new Error("Can't read the song."); return r.blob(); }),
     ]);
     const parsed = parseFseq(buf);
     if (current?.name !== name || current?.source !== source) return;
@@ -484,7 +487,7 @@ async function openShow(source, name, autoplay = true) {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = URL.createObjectURL(blob);
     audio.src = objectUrl;
-    // Pornește singur; dacă browserul blochează redarea automată, rămâne butonul Play
+    // Autoplay; if the browser blocks it, the Play button stays
     if (autoplay) audio.play().catch(() => {});
     snapNext = true;
     emu = createEmulator(cfg);
@@ -515,13 +518,13 @@ function showEmpty() {
 // ---------- Compatibilitate ----------
 function renderCompat() {
   const v = VEHICLES[cfg.vehicle];
-  $('#compatTitle').textContent = `Pe ${v.name}`;
-  if (!seq) { $('#compatSub').textContent = 'Alege un show ca să vezi ce face pe mașina ta.'; $('#compatList').innerHTML = ''; return; }
+  $('#compatTitle').textContent = `On ${v.name}`;
+  if (!seq) { $('#compatSub').textContent = 'Pick a show to see what it does on your car.'; $('#compatList').innerHTML = ''; return; }
   const rows = compatibility(seq, cfg);
   const bad = rows.filter(r => !r.ok).length;
-  $('#compatSub').textContent = `${REGIONS[cfg.region].name}, ${HEADLIGHTS[cfg.headlights].name.toLowerCase()}. ${bad ? `${bad} ${bad === 1 ? 'element nu se vede' : 'elemente nu se văd'} pe mașina ta.` : 'Tot show-ul se vede pe mașina ta.'}`;
+  $('#compatSub').textContent = `${REGIONS[cfg.region].name}, ${HEADLIGHTS[cfg.headlights].name.toLowerCase()}. ${bad ? `${bad} ${bad === 1 ? 'part is' : 'parts are'} not visible on your car.` : 'The whole show works on your car.'}`;
   $('#compatList').innerHTML = rows.map(r => `<li class="${r.ok ? '' : 'bad'}"><span class="dot"></span><strong>${esc(r.label)}</strong><small>${esc(r.detail)}${r.note ? `. ${esc(r.note)}` : ''}</small></li>`).join('')
-    || '<li><span class="dot"></span><strong>Doar lumini</strong><small>Show-ul nu folosește elemente mobile.</small></li>';
+    || '<li><span class="dot"></span><strong>Lights only</strong><small>This show has no moving parts.</small></li>';
 }
 $('#compatBtn').addEventListener('click', () => {
   const open = $('#inspector').hidden;
@@ -538,10 +541,10 @@ function setPicked(file) {
   picked = file;
   const drop = $('#dropText');
   if (!file) {
-    drop.innerHTML = 'Trage melodia aici sau <button type="button" class="link" id="pickBtn">alege fișierul</button>';
+    drop.innerHTML = 'Drop a song here or <button type="button" class="link" id="pickBtn">choose a file</button>';
     $('#showName').hidden = true;
   } else {
-    drop.innerHTML = `<span class="file-chip"><span>${esc(file.name)}</span><button type="button" id="clearFile" aria-label="Scoate fișierul"><svg viewBox="0 0 20 20"><path d="m6 6 8 8M14 6l-8 8"/></svg></button></span>`;
+    drop.innerHTML = `<span class="file-chip"><span>${esc(file.name)}</span><button type="button" id="clearFile" aria-label="Remove file"><svg viewBox="0 0 20 20"><path d="m6 6 8 8M14 6l-8 8"/></svg></button></span>`;
     const name = $('#showName');
     name.hidden = false;
     if (!name.value) name.value = file.name.replace(/\.[^.]+$/, '').replace(/[^\w\- ăâîșțĂÂÎȘȚ]/g, '').trim().slice(0, 60);
@@ -559,15 +562,15 @@ for (const t of ['dragleave', 'drop']) $('#drop').addEventListener(t, e => { e.p
 $('#drop').addEventListener('drop', e => {
   const f = [...e.dataTransfer.files].find(x => /\.(mp3|wav)$/i.test(x.name));
   if (f) setPicked(f);
-  else { $('#genStatus').textContent = 'Trage un fișier .mp3 sau .wav.'; $('#genStatus').classList.add('err'); }
+  else { $('#genStatus').textContent = 'Drop an .mp3 or .wav file.'; $('#genStatus').classList.add('err'); }
 });
 $('#newForm').addEventListener('submit', async e => {
   e.preventDefault();
   const name = $('#showName').value.trim(), st = $('#genStatus');
   st.classList.remove('err');
   if (!picked) return;
-  if (!/^[\w\- ăâîșțĂÂÎȘȚ]{1,60}$/.test(name)) { st.textContent = 'Numele poate avea doar litere, cifre, spații și cratime.'; st.classList.add('err'); return; }
-  st.textContent = `Analizez melodia și generez show-ul pentru ${VEHICLES[cfg.vehicle].name}. Durează de obicei sub un minut.`;
+  if (!/^[\w\- ăâîșțĂÂÎȘȚ]{1,60}$/.test(name)) { st.textContent = 'Names can only contain letters, digits, spaces and dashes.'; st.classList.add('err'); return; }
+  st.textContent = `Analyzing the song and generating the show for ${VEHICLES[cfg.vehicle].name}. Usually takes under a minute.`;
   $('#genBtn').disabled = true;
   try {
     const r = await fetch('/api/generate', {
@@ -594,7 +597,7 @@ $('#newForm').addEventListener('submit', async e => {
 $('#copyBtn').addEventListener('click', async () => {
   const btn = $('#copyBtn');
   btn.disabled = true;
-  btn.querySelector('span').textContent = 'Se copiază…';
+  btn.querySelector('span').textContent = 'Copying…';
   const r = await fetch('/api/copy-to-usb', { method: 'POST', body: JSON.stringify({ name: current.name }) });
   const j = await r.json();
   if (!r.ok) { btn.querySelector('span').textContent = j.error; setTimeout(renderLibrary, 3500); return; }
@@ -606,7 +609,7 @@ let presenting = false, viewBefore = view, presentList = [], presentIdx = 0;
 function playPresent() {
   const s = presentList[presentIdx % presentList.length];
   $('#presentName').textContent = s.name;
-  $('#presentSub').textContent = `${VEHICLES[cfg.vehicle].name}, ${presentIdx % presentList.length + 1} din ${presentList.length}. Esc pentru ieșire`;
+  $('#presentSub').textContent = `${VEHICLES[cfg.vehicle].name}, ${presentIdx % presentList.length + 1} of ${presentList.length}. Esc to exit`;
   openShow(s.source, s.name, true);
 }
 function startPresentation() {
@@ -638,12 +641,23 @@ audio.addEventListener('timeupdate', () => {
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) stopPresentation(); });
 addEventListener('keydown', e => { if (e.key === 'Escape') stopPresentation(); });
 
-// ---------- Setări + bara laterală ----------
+// ---------- Sync offset ----------
+function setSync(ms) {
+  cfg.syncMs = Math.max(-500, Math.min(500, Math.round(ms)));
+  store.set('syncMs', String(cfg.syncMs));
+  $('#syncRange').value = cfg.syncMs;
+  $('#syncValue').textContent = `${cfg.syncMs > 0 ? '+' : ''}${cfg.syncMs} ms`;
+  snapNext = true;
+}
+$('#syncRange').addEventListener('input', e => setSync(+e.target.value));
+setSync(cfg.syncMs);
+
+// ---------- Settings + sidebar ----------
 const dlg = $('#settings');
 function openSettings(pane = 'car') {
   for (const b of $$('.nav-item[data-pane]')) b.classList.toggle('active', b.dataset.pane === pane);
   for (const p of $$('.pane')) p.hidden = p.dataset.pane !== pane;
-  $('#paneTitle').textContent = pane === 'usb' ? 'Stick USB' : 'Mașină';
+  $('#paneTitle').textContent = pane === 'usb' ? 'USB drive' : 'Car';
   if (!dlg.open) dlg.showModal();
 }
 $('#settingsBtn').addEventListener('click', () => openSettings());
@@ -661,5 +675,5 @@ setCollapsed(store.get('collapsed', '0') === '1');
 if (store.get('inspector', '0') === '1') { $('#inspector').hidden = false; $('#compatBtn').setAttribute('aria-pressed', 'true'); }
 mountViews();
 setView(view);
-refresh().catch(() => { $('#emptySub').textContent = 'Serverul Studio nu răspunde. Pornește-l cu python studio.py.'; });
-setInterval(() => refresh().catch(() => {}), 5000); // stickul poate fi conectat oricând
+refresh().catch(() => { $('#emptySub').textContent = "The Studio server isn't responding. Start it with python studio.py."; });
+setInterval(() => refresh().catch(() => {}), 5000); // the drive can be plugged in anytime

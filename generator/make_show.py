@@ -117,9 +117,21 @@ def build(onset, low, mid, high, energy, max_mode=False, model="m3"):
     lvl = levels(energy, (25, 55) if max_mode else (35, 70))
     period = tempo_period(onset)
     beats = track_beats(onset, period)
-    kicks = pick_peaks(low, min_gap=11, k=1.2)   # >= 220 ms între flash-uri
-    snares = pick_peaks(mid, min_gap=11, k=1.4)
-    hats = pick_peaks(high, min_gap=11, k=1.5)
+    # Sincronizare: fiecare beat pe vârful real al loviturii (±2 cadre = ±40 ms)
+    beats = np.array([b - 2 + int(np.argmax(onset[max(0, b - 2):b + 3])) if b >= 2 else b for b in beats])
+    grid = np.unique(np.concatenate([beats + int(round(k * period / 4)) for k in range(4)]))  # șaisprezecimi
+
+    def snap(events):
+        """Evenimentele apropiate de grila ritmică (<= 2 cadre) cad exact pe ea."""
+        if not len(events):
+            return events
+        idx = np.clip(np.searchsorted(grid, events), 1, len(grid) - 1)
+        near = np.where(events - grid[idx - 1] < grid[idx] - events, grid[idx - 1], grid[idx])
+        return np.where(np.abs(near - events) <= 2, near, events)
+
+    kicks = snap(pick_peaks(low, min_gap=11, k=1.2))   # >= 220 ms între flash-uri
+    snares = snap(pick_peaks(mid, min_gap=11, k=1.4))
+    hats = snap(pick_peaks(high, min_gap=11, k=1.5))
     flash = 6  # 120 ms (Tesla recomandă >= 100 ms)
     # Măsuri de 4 timpi: primul timp e faza cu cel mai mult bas pe beat
     phase = int(np.argmax([low[beats[p::4]].sum() for p in range(4)]))
