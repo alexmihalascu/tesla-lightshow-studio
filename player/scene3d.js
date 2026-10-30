@@ -412,6 +412,7 @@ export async function loadCar(layout, vehicleKey) {
       if (keys.some(k => /^(outer|tail)/.test(k))) precise++; // a plate or fog lamp alone doesn't make it precise
     }
 
+    const splitOff = []; // meshes split off the model into the scene (world space), e.g. lamps
     // Lights, generic version: "light/lamp" materials split by triangle into front/rear and left/center/right
     if (!precise) {
       for (const o of meshes) {
@@ -425,7 +426,10 @@ export async function loadCar(layout, vehicleKey) {
           : `${cx > 0 ? 'F' : 'R'}${Math.abs(cz) < W * 0.12 ? 'C' : cz < 0 ? 'L' : 'R'}`);
         for (const [g, geo] of Object.entries(groups)) {
           // red away from the rear isn't a lamp; on the Model Y it's a hidden layer that speckles through the paint
-          if (g === 'K') { if (!red) scene.add(new THREE.Mesh(geo, o.material)); continue; }
+          if (g === 'K') {
+            if (!red) { const trim = new THREE.Mesh(geo, o.material); scene.add(trim); splitOff.push(trim); }
+            continue;
+          }
           const front = g[0] === 'F', side = g[1];
           const color = front ? WHITE : RED;
           const mat = (Array.isArray(o.material) ? o.material[0] : o.material).clone();
@@ -434,6 +438,7 @@ export async function loadCar(layout, vehicleKey) {
           if (!front) mat.color = new THREE.Color('#5a0b0b');
           const piece = new THREE.Mesh(geo, mat);
           scene.add(piece);
+          splitOff.push(piece);
           const pos = new THREE.Box3().setFromObject(piece).getCenter(new THREE.Vector3());
           const keys = front
             ? (side === 'C' ? ['sigL', 'sigR', 'c4L', 'c4R'] : [`outer${side}`, `inner${side}`, `sig${side}`, `c4${side}`])
@@ -524,14 +529,31 @@ export async function loadCar(layout, vehicleKey) {
       // No separate liftgate in the model: cut the rear above the bumper out of the body (like the
       // mirrors) and swing it up around its top edge
       model.updateMatrixWorld(true);
-      const pieces = [];
-      for (const m of meshes) {
-        if (!m.visible) continue;
-        const Wp = worldPositions(m), idx = triIndex(m.geometry), gate = [], keep = [];
+      scene.updateMatrixWorld(true);
+      // Only the outer shell: seen from behind, the rearmost surface in each (height, width) cell plus
+      // a panel's thickness. Seats and trunk lining further in stay put. Rear lamps come along.
+      const shell = [...meshes, ...splitOff].filter(m => m.visible && !/interior|seat|carpet/i.test(m.material?.name || ''))
+        .map(m => ({ m, Wp: worldPositions(m), idx: triIndex(m.geometry) }));
+      const N = 48, depth = new Float32Array(N * N).fill(Infinity);
+      const cell = (y, z) => Math.min(N - 1, Math.max(0, Math.floor((y - final.min.y) / H * N))) * N
+        + Math.min(N - 1, Math.max(0, Math.floor((z - final.min.z) / W * N)));
+      const centroid = (Wp, idx, i) => {
+        const a = idx[i] * 3, b = idx[i + 1] * 3, d = idx[i + 2] * 3;
+        return [(Wp[a] + Wp[b] + Wp[d]) / 3, (Wp[a + 1] + Wp[b + 1] + Wp[d + 1]) / 3, (Wp[a + 2] + Wp[b + 2] + Wp[d + 2]) / 3];
+      };
+      const inRegion = (x, y, z) => x < final.min.x + 0.2 * L && y > final.min.y + 0.45 * H && Math.abs(z) < 0.42 * W;
+      for (const { Wp, idx } of shell) {
         for (let i = 0; i < idx.length; i += 3) {
-          const a = idx[i] * 3, b = idx[i + 1] * 3, d = idx[i + 2] * 3;
-          const x = (Wp[a] + Wp[b] + Wp[d]) / 3, y = (Wp[a + 1] + Wp[b + 1] + Wp[d + 1]) / 3, z = (Wp[a + 2] + Wp[b + 2] + Wp[d + 2]) / 3;
-          const hit = x < final.min.x + 0.2 * L && y > final.min.y + 0.45 * H && Math.abs(z) < 0.42 * W;
+          const [x, y, z] = centroid(Wp, idx, i), c = cell(y, z);
+          if (inRegion(x, y, z) && x < depth[c]) depth[c] = x;
+        }
+      }
+      const pieces = [];
+      for (const { m, Wp, idx } of shell) {
+        const gate = [], keep = [];
+        for (let i = 0; i < idx.length; i += 3) {
+          const [x, y, z] = centroid(Wp, idx, i);
+          const hit = inRegion(x, y, z) && x < depth[cell(y, z)] + 0.07 * L;
           (hit ? gate : keep).push(idx[i], idx[i + 1], idx[i + 2]);
         }
         if (!gate.length) continue;
